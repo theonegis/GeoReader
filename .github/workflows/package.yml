@@ -1,0 +1,181 @@
+name: Build install packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  QT_VERSION: "6.8.*"
+  VCPKG_COMMIT: "827a2e1203bc19941126c657166da44f2623acc4"
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Intel
+            runner: macos-15-intel
+            architecture: x86_64
+          - name: Apple-Silicon
+            runner: macos-15
+            architecture: arm64
+
+    steps:
+      - name: Check out GeoReader
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: brew install cmake ninja qt gdal mapnik dylibbundler
+
+      - name: Build and create DMG
+        run: |
+          ./scripts/build.sh --clean-first --package --package-format dmg -- \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.architecture }}
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoReader-macOS-${{ matrix.architecture }}
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  windows:
+    name: Windows x64
+    runs-on: windows-2025
+
+    steps:
+      - name: Check out GeoReader
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          modules: qttools
+          cache: true
+
+      - name: Check out vcpkg
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          ref: ${{ env.VCPKG_COMMIT }}
+          path: .vcpkg
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: vcpkg_installed
+          key: vcpkg-windows-x64-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: .\.vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress -y
+          "C:\Program Files (x86)\NSIS" | Out-File `
+            -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build and create NSIS installer
+        shell: pwsh
+        run: |
+          $installed = "$env:GITHUB_WORKSPACE/vcpkg_installed"
+          .\scripts\build.ps1 -CleanFirst -Package -PackageFormat nsis `
+            -CMakeArgs @(
+              "-DCMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE/.vcpkg/scripts/buildsystems/vcpkg.cmake"
+              "-DVCPKG_INSTALLED_DIR=$installed"
+              "-DVCPKG_TARGET_TRIPLET=x64-windows"
+              "-DGEOREADER_BUNDLE_VCPKG_RUNTIME=ON"
+              "-DGEOREADER_VCPKG_RUNTIME_ROOT=$installed/x64-windows"
+            )
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoReader-Windows-x64
+          path: dist/*.exe
+          if-no-files-found: error
+
+  linux:
+    name: Linux x64 DEB and RPM
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out GeoReader
+        uses: actions/checkout@v4
+
+      - name: Install system build and packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build \
+            rpm \
+            libgl1-mesa-dev \
+            libwayland-client0 \
+            libwayland-cursor0 \
+            libwayland-egl1 \
+            libxkbcommon0 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: linux_gcc_64
+          modules: qttools qtwaylandcompositor
+          cache: true
+
+      - name: Check out vcpkg
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          ref: ${{ env.VCPKG_COMMIT }}
+          path: .vcpkg
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: vcpkg_installed
+          key: vcpkg-linux-x64-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+
+      - name: Bootstrap vcpkg
+        run: ./.vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Build and create DEB/RPM packages
+        run: |
+          installed="$GITHUB_WORKSPACE/vcpkg_installed"
+          ./scripts/build.sh --clean-first --package --package-format all -- \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/.vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="$installed" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DGEOREADER_BUNDLE_VCPKG_RUNTIME=ON \
+            -DGEOREADER_VCPKG_RUNTIME_ROOT="$installed/x64-linux"
+
+      - name: Verify Wayland QPA plugin is packaged
+        run: |
+          deb_package="$(find dist -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$deb_package"
+          dpkg-deb -c "$deb_package" \
+            | grep -E 'platforms/libqwayland-(egl|generic)\.so'
+
+      - name: Upload Linux packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeoReader-Linux-x64
+          path: |
+            dist/*.deb
+            dist/*.rpm
+          if-no-files-found: error

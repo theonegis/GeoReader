@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GeoReader
+Comment=Browse vector and raster spatial data
+Exec=GeoReader %F
+Icon=georeader
+Terminal=false
+Categories=Science;Geography;
+MimeType=application/geo+json;application/geopackage+sqlite3;image/tiff;

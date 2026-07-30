@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "georeader",
+  "version-string": "0.1.0",
+  "builtin-baseline": "827a2e1203bc19941126c657166da44f2623acc4",
+  "dependencies": [
+    "gdal",
+    {
+      "name": "mapnik",
+      "default-features": true,
+      "features": [
+        "input-gdal",
+        "input-geojson",
+        "input-ogr",
+        "input-raster",
+        "input-shape"
+      ]
+    }
+  ]
+}

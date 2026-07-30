@@ -1,0 +1,29 @@
+{
+  "type": "FeatureCollection",
+  "name": "georeader_line_demo",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "闭合线渲染测试",
+        "category": "demo line"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [120.105, 30.225],
+          [120.175, 30.225],
+          [120.175, 30.285],
+          [120.105, 30.285],
+          [120.105, 30.225]
+        ]
+      }
+    }
+  ]
+}

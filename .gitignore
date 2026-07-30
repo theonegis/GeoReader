@@ -1,0 +1,79 @@
+# CMake / Ninja 构建目录
+/build*/
+/cmake-build-*/
+/stage*/
+/_CPack_Packages/
+
+# CMake 在源码目录误配置时产生的文件
+/CMakeCache.txt
+/CMakeFiles/
+/cmake_install.cmake
+/CTestTestfile.cmake
+/CPackConfig.cmake
+/CPackSourceConfig.cmake
+/Makefile
+/build.ninja
+/.ninja_deps
+/.ninja_log
+/compile_commands.json
+/Testing/
+
+# 最终安装包与脚本保存的可运行副本
+/dist*/
+*.dmg
+*.deb
+*.rpm
+*.msi
+*.pkg
+*.AppImage
+*.tar.gz
+*.tar.xz
+
+# vcpkg 本地依赖与缓存
+/.vcpkg/
+/vcpkg_installed/
+/downloads/
+/packages/
+
+# Qt / Qt Creator 用户状态和生成文件
+*.pro.user
+*.pro.user.*
+*.qmlproject.user
+*.qmlproject.user.*
+*.user
+*.user.*
+*.autosave
+/.qtc_clangd/
+/.qmlls.ini
+
+# IDE 与编辑器本地设置
+/.idea/
+/.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# 编译器、测试和分析临时文件
+*.o
+*.obj
+*.a
+*.lib
+*.dylib
+*.dll
+*.so
+*.so.*
+*.pdb
+*.ilk
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+*.log
+*.tmp
+
+# 操作系统生成文件
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
