@@ -442,6 +442,15 @@ sudo dnf install qt6-qtwayland wayland-libs libxkbcommon
 可按 GitHub Actions 的做法安装 Qt 6.8，并通过 vcpkg 构建 GDAL/Mapnik：
 
 ```bash
+# Ubuntu：vcpkg 构建 GDAL/FreeXL 等依赖时需要 GNU Autotools。
+sudo apt install autoconf autoconf-archive automake libtool
+
+# Fedora / CachyOS 分别使用：
+sudo dnf install autoconf autoconf-archive automake libtool
+sudo pacman -S autoconf autoconf-archive automake libtool
+```
+
+```bash
 git clone https://github.com/microsoft/vcpkg.git .vcpkg
 git -C .vcpkg checkout 827a2e1203bc19941126c657166da44f2623acc4
 ./.vcpkg/bootstrap-vcpkg.sh -disableMetrics
