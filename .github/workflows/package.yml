@@ -111,6 +111,11 @@ jobs:
           arch: win64_msvc2022_64
           cache: true
 
+      - name: Enable Visual Studio 2022 x64 environment
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+        with:
+          arch: x64
+
       - name: Check out vcpkg
         uses: actions/checkout@v5
         with:
@@ -169,9 +174,26 @@ jobs:
         shell: pwsh
         run: |
           $installed = "$env:GITHUB_WORKSPACE/vcpkg_installed"
+          if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
+            throw "MSVC cl.exe was not found in the configured build environment."
+          }
+          $pkgConfig = Get-ChildItem `
+            -Path $installed `
+            -Recurse `
+            -Filter "pkgconf.exe" |
+            Select-Object -First 1
+          if (-not $pkgConfig) {
+            throw "vcpkg pkgconf.exe was not found below $installed."
+          }
+          $env:PKG_CONFIG_PATH = @(
+            "$installed/x64-windows-release/lib/pkgconfig"
+            "$installed/x64-windows-release/share/pkgconfig"
+          ) -join ";"
           .\scripts\build.ps1 -CleanFirst -Package -PackageFormat nsis `
             -CMakeArgs @(
+              "-DCMAKE_CXX_COMPILER=cl.exe"
               "-DCMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE/.vcpkg/scripts/buildsystems/vcpkg.cmake"
+              "-DPKG_CONFIG_EXECUTABLE=$($pkgConfig.FullName)"
               "-DVCPKG_INSTALLED_DIR=$installed"
               "-DVCPKG_TARGET_TRIPLET=x64-windows-release"
               "-DVCPKG_OVERLAY_PORTS=$env:GITHUB_WORKSPACE/.vcpkg-overlays"
