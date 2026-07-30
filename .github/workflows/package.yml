@@ -41,8 +41,20 @@ env:
   MAPNIK_VERSION: "4.3.0"
 
 jobs:
+  validate:
+    name: Validate build metadata
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out GeoReader
+        uses: actions/checkout@v5
+
+      - name: Run build metadata tests
+        run: python3 -m unittest discover -s tests -p "test_*.py" -v
+
   macos:
     name: macOS ${{ matrix.name }}
+    needs: validate
     if: >-
       github.event_name != 'workflow_dispatch' ||
       inputs.build_target == 'all' ||
@@ -80,6 +92,7 @@ jobs:
 
   windows:
     name: Windows x64
+    needs: validate
     if: >-
       github.event_name != 'workflow_dispatch' ||
       inputs.build_target == 'all' ||
@@ -105,14 +118,16 @@ jobs:
           ref: ${{ env.VCPKG_COMMIT }}
           path: .vcpkg
 
-      - name: Cache vcpkg packages
-        uses: actions/cache@v4
+      - name: Restore vcpkg packages
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: vcpkg_installed
           key: >-
             vcpkg-windows-x64-${{ env.VCPKG_COMMIT }}-mapnik-${{
             env.MAPNIK_VERSION }}-${{ hashFiles(
-            'vcpkg.json', 'scripts/prepare_vcpkg_overlay.py') }}
+            'vcpkg.json', 'scripts/prepare_vcpkg_overlay.py',
+            'cmake/triplets/x64-windows-release.cmake') }}
 
       - name: Bootstrap vcpkg
         shell: pwsh
@@ -124,6 +139,24 @@ jobs:
           python scripts/prepare_vcpkg_overlay.py
           --vcpkg-root .vcpkg
           --output .vcpkg-overlays
+
+      - name: Install pinned vcpkg dependencies
+        shell: pwsh
+        run: |
+          $installed = "$env:GITHUB_WORKSPACE/vcpkg_installed"
+          .\.vcpkg\vcpkg.exe install `
+            --triplet=x64-windows-release `
+            --x-manifest-root="$env:GITHUB_WORKSPACE" `
+            --x-install-root="$installed" `
+            --overlay-ports="$env:GITHUB_WORKSPACE/.vcpkg-overlays" `
+            --overlay-triplets="$env:GITHUB_WORKSPACE/cmake/triplets"
+
+      - name: Save vcpkg packages
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: vcpkg_installed
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
       - name: Install NSIS
         shell: pwsh
@@ -140,10 +173,11 @@ jobs:
             -CMakeArgs @(
               "-DCMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE/.vcpkg/scripts/buildsystems/vcpkg.cmake"
               "-DVCPKG_INSTALLED_DIR=$installed"
-              "-DVCPKG_TARGET_TRIPLET=x64-windows"
+              "-DVCPKG_TARGET_TRIPLET=x64-windows-release"
               "-DVCPKG_OVERLAY_PORTS=$env:GITHUB_WORKSPACE/.vcpkg-overlays"
+              "-DVCPKG_OVERLAY_TRIPLETS=$env:GITHUB_WORKSPACE/cmake/triplets"
               "-DGEOREADER_BUNDLE_VCPKG_RUNTIME=ON"
-              "-DGEOREADER_VCPKG_RUNTIME_ROOT=$installed/x64-windows"
+              "-DGEOREADER_VCPKG_RUNTIME_ROOT=$installed/x64-windows-release"
             )
 
       - name: Upload Windows installer
@@ -155,6 +189,7 @@ jobs:
 
   linux:
     name: Linux x64 DEB and RPM
+    needs: validate
     if: >-
       github.event_name != 'workflow_dispatch' ||
       inputs.build_target == 'all' ||
@@ -199,14 +234,16 @@ jobs:
           ref: ${{ env.VCPKG_COMMIT }}
           path: .vcpkg
 
-      - name: Cache vcpkg packages
-        uses: actions/cache@v4
+      - name: Restore vcpkg packages
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
           path: vcpkg_installed
           key: >-
             vcpkg-linux-x64-${{ env.VCPKG_COMMIT }}-mapnik-${{
             env.MAPNIK_VERSION }}-${{ hashFiles(
-            'vcpkg.json', 'scripts/prepare_vcpkg_overlay.py') }}
+            'vcpkg.json', 'scripts/prepare_vcpkg_overlay.py',
+            'cmake/triplets/x64-linux-release.cmake') }}
 
       - name: Bootstrap vcpkg
         run: ./.vcpkg/bootstrap-vcpkg.sh -disableMetrics
@@ -217,6 +254,23 @@ jobs:
           --vcpkg-root .vcpkg
           --output .vcpkg-overlays
 
+      - name: Install pinned vcpkg dependencies
+        run: |
+          installed="$GITHUB_WORKSPACE/vcpkg_installed"
+          ./.vcpkg/vcpkg install \
+            --triplet=x64-linux-release \
+            --x-manifest-root="$GITHUB_WORKSPACE" \
+            --x-install-root="$installed" \
+            --overlay-ports="$GITHUB_WORKSPACE/.vcpkg-overlays" \
+            --overlay-triplets="$GITHUB_WORKSPACE/cmake/triplets"
+
+      - name: Save vcpkg packages
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: vcpkg_installed
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
       - name: Build and create DEB/RPM packages
         run: |
           installed="$GITHUB_WORKSPACE/vcpkg_installed"
@@ -224,10 +278,11 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=/usr \
             -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/.vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_INSTALLED_DIR="$installed" \
-            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DVCPKG_TARGET_TRIPLET=x64-linux-release \
             -DVCPKG_OVERLAY_PORTS="$GITHUB_WORKSPACE/.vcpkg-overlays" \
+            -DVCPKG_OVERLAY_TRIPLETS="$GITHUB_WORKSPACE/cmake/triplets" \
             -DGEOREADER_BUNDLE_VCPKG_RUNTIME=ON \
-            -DGEOREADER_VCPKG_RUNTIME_ROOT="$installed/x64-linux"
+            -DGEOREADER_VCPKG_RUNTIME_ROOT="$installed/x64-linux-release"
 
       - name: Verify Wayland QPA plugin is packaged
         run: |

@@ -454,12 +454,17 @@ sudo pacman -S autoconf autoconf-archive automake libtool
 git clone https://github.com/microsoft/vcpkg.git .vcpkg
 git -C .vcpkg checkout 827a2e1203bc19941126c657166da44f2623acc4
 ./.vcpkg/bootstrap-vcpkg.sh -disableMetrics
+python3 scripts/prepare_vcpkg_overlay.py \
+  --vcpkg-root .vcpkg \
+  --output .vcpkg-overlays
 
 ./scripts/build.sh -- \
   -DCMAKE_PREFIX_PATH=/path/to/Qt/6.8.x/gcc_64 \
   -DCMAKE_TOOLCHAIN_FILE="$PWD/.vcpkg/scripts/buildsystems/vcpkg.cmake" \
   -DVCPKG_INSTALLED_DIR="$PWD/vcpkg_installed" \
-  -DVCPKG_TARGET_TRIPLET=x64-linux
+  -DVCPKG_TARGET_TRIPLET=x64-linux-release \
+  -DVCPKG_OVERLAY_PORTS="$PWD/.vcpkg-overlays" \
+  -DVCPKG_OVERLAY_TRIPLETS="$PWD/cmake/triplets"
 ./build/GeoReader
 ```
 
@@ -468,7 +473,7 @@ DEB/RPM 打包需要额外打开运行库收集并安装对应的打包工具：
 ```bash
 ./scripts/build.sh --package --package-format all -- \
   -DGEOREADER_BUNDLE_VCPKG_RUNTIME=ON \
-  -DGEOREADER_VCPKG_RUNTIME_ROOT="$PWD/vcpkg_installed/x64-linux"
+  -DGEOREADER_VCPKG_RUNTIME_ROOT="$PWD/vcpkg_installed/x64-linux-release"
 ```
 
 CI 的 Linux 二进制在 Ubuntu 24.04 x64 上构建；DEB 和 RPM 包含 Qt、
@@ -508,6 +513,11 @@ Windows/Linux 使用 Qt 6.8 LTS 和 vcpkg；项目根据固定 SHA-512 创建
 Mapnik 4.3.0 overlay port，因为 vcpkg 当前内置 Mapnik port 仍是
 4.0.7。macOS 使用 runner 当前架构的 Homebrew Qt、GDAL 和 Mapnik
 （要求 Qt 6.8+）。
+
+CI 使用仓库内的 Release-only vcpkg triplet，避免为 GDAL、Mapnik
+及其依赖重复编译不会进入安装包的 Debug 版本。依赖安装与应用构建
+分为两个阶段；依赖成功后立即保存缓存，因此即使后续应用或打包失败，
+下一次运行也不必重新编译整套 Windows/Linux 依赖。
 
 若一次构建只有部分平台失败，成功 job 上传的 artifact 仍可复用。例如
 运行 `30533107514` 已成功生成两个 macOS DMG，只需重新构建 Windows

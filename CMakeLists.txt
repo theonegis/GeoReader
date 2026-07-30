@@ -130,6 +130,10 @@ endif()
 
 qt_standard_project_setup(REQUIRES 6.8)
 
+# Qt 默认会按 QML URI 在构建根目录创建 GeoReader/。Linux 可执行文件
+# 同样名为 GeoReader，因此把所有 QML 工具产物集中到独立的 qml/ 目录。
+set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml")
+
 qt_add_executable(GeoReader
     src/main.cpp
     src/AppController.cpp
