@@ -70,7 +70,10 @@ find_library(ICU_I18N_LIBRARY NAMES icui18n icuin
 find_package(mapnik CONFIG QUIET)
 if(TARGET mapnik::mapnik)
     set(GEOREADER_MAPNIK_LINK_TARGET mapnik::mapnik)
-    if(COMMAND mapnik_find_plugin_dir)
+    # Homebrew Mapnik 4.2/4.3 的辅助函数在 CMAKE_BUILD_TYPE 为空时会向
+    # list(FIND) 传入缺失参数。多配置生成器也可能没有该变量，因此这种
+    # 情况直接使用下方跨平台 find_path，避免配置阶段提前失败。
+    if(COMMAND mapnik_find_plugin_dir AND CMAKE_BUILD_TYPE)
         mapnik_find_plugin_dir(MAPNIK_INPUT_PLUGIN_DIR)
     endif()
 else()

@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  QT_VERSION: "6.8.*"
+  QT_VERSION: "6.8.3"
   VCPKG_COMMIT: "827a2e1203bc19941126c657166da44f2623acc4"
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Check out GeoReader
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install build dependencies
         run: brew install cmake ninja qt gdal mapnik dylibbundler
@@ -53,18 +53,17 @@ jobs:
 
     steps:
       - name: Check out GeoReader
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
           arch: win64_msvc2022_64
-          modules: qttools
           cache: true
 
       - name: Check out vcpkg
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: microsoft/vcpkg
           ref: ${{ env.VCPKG_COMMIT }}
@@ -113,7 +112,7 @@ jobs:
 
     steps:
       - name: Check out GeoReader
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install system build and packaging tools
         run: |
@@ -134,11 +133,11 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: linux_gcc_64
-          modules: qttools qtwaylandcompositor
+          modules: qtwaylandcompositor
           cache: true
 
       - name: Check out vcpkg
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: microsoft/vcpkg
           ref: ${{ env.VCPKG_COMMIT }}

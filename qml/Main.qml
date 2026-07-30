@@ -1745,6 +1745,19 @@ ApplicationWindow {
         // 属性表保持非模态：打开后仍可缩放地图或操作右侧图层面板。
         property int sortColumn: -1
         property bool sortAscending: true
+        readonly property int tableColumnCount:
+            app.attributeTableModel.columns.length
+        readonly property real minimumTableColumnWidth: 150
+
+        function tableColumnWidth(column) {
+            if (tableColumnCount <= 0)
+                return minimumTableColumnWidth
+
+            // 字段较少时均分整个视口；字段较多时保持可读的最小宽度，
+            // 超出的列交由 TableView 横向滚动，表头与数据列始终对齐。
+            return Math.max(minimumTableColumnWidth,
+                            attributeTable.width / tableColumnCount)
+        }
 
         visible: false
         z: 110
@@ -1865,7 +1878,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 38
                 color: Qt.rgba(palette.text.r, palette.text.g,
-                               palette.text.b, .06)
+                               palette.text.b, .045)
                 clip: true
 
                 Row {
@@ -1873,29 +1886,65 @@ ApplicationWindow {
                     height: parent.height
                     Repeater {
                         model: app.attributeTableModel.columns
-                        delegate: Button {
+                        delegate: Rectangle {
                             required property int index
                             required property string modelData
-                            width: 170
+                            width: attributeTableDialog.tableColumnWidth(index)
                             height: 38
-                            flat: true
-                            text: modelData
-                                  + (attributeTableDialog.sortColumn === index
-                                     ? (attributeTableDialog.sortAscending
-                                        ? "  ↑" : "  ↓") : "")
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
-                            onClicked: {
-                                if (attributeTableDialog.sortColumn === index)
-                                    attributeTableDialog.sortAscending =
+                            color: attributeTableDialog.sortColumn === index
+                                   ? Qt.rgba(palette.accent.r,
+                                             palette.accent.g,
+                                             palette.accent.b, .10)
+                                   : (headerMouse.containsMouse
+                                      ? Qt.rgba(palette.text.r,
+                                                palette.text.g,
+                                                palette.text.b, .035)
+                                      : "transparent")
+
+                            Label {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 10
+                                anchors.right: parent.right
+                                anchors.rightMargin: 10
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: modelData
+                                      + (attributeTableDialog.sortColumn
+                                         === index
+                                         ? (attributeTableDialog.sortAscending
+                                            ? "  ↑" : "  ↓") : "")
+                                color: palette.text
+                                elide: Text.ElideRight
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                            }
+
+                            Rectangle {
+                                anchors.right: parent.right
+                                width: 1
+                                height: parent.height
+                                color: Qt.rgba(palette.text.r,
+                                               palette.text.g,
+                                               palette.text.b, .07)
+                            }
+
+                            MouseArea {
+                                id: headerMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (attributeTableDialog.sortColumn
+                                            === index) {
+                                        attributeTableDialog.sortAscending =
                                             !attributeTableDialog.sortAscending
-                                else {
-                                    attributeTableDialog.sortColumn = index
-                                    attributeTableDialog.sortAscending = true
+                                    } else {
+                                        attributeTableDialog.sortColumn = index
+                                        attributeTableDialog.sortAscending = true
+                                    }
+                                    app.attributeTableModel.sortByColumn(
+                                        index,
+                                        attributeTableDialog.sortAscending)
                                 }
-                                app.attributeTableModel.sortByColumn(
-                                    index,
-                                    attributeTableDialog.sortAscending)
                             }
                         }
                     }
@@ -1910,16 +1959,31 @@ ApplicationWindow {
                 reuseItems: true
                 boundsBehavior: Flickable.StopAtBounds
                 model: app.attributeTableModel
-                columnWidthProvider: function(column) { return 170 }
+                columnWidthProvider: function(column) {
+                    return attributeTableDialog.tableColumnWidth(column)
+                }
                 rowHeightProvider: function(row) { return 34 }
-                ScrollBar.vertical: ScrollBar {}
-                ScrollBar.horizontal: ScrollBar {}
+                onWidthChanged: forceLayout()
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                }
+                ScrollBar.horizontal: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                }
+
+                Connections {
+                    target: app.attributeTableModel
+                    function onLayerChanged() {
+                        attributeTable.forceLayout()
+                    }
+                }
 
                 delegate: Rectangle {
                     required property int row
                     required property int column
                     required property string display
-                    implicitWidth: 170
+                    implicitWidth:
+                        attributeTableDialog.tableColumnWidth(column)
                     implicitHeight: 34
                     color: row % 2
                            ? Qt.rgba(palette.text.r, palette.text.g,

@@ -179,9 +179,50 @@ cmake_arguments=(
 if [[ "$(uname -s)" == "Darwin" ]] \
    && [[ -z "${CMAKE_PREFIX_PATH:-}" ]] \
    && command -v brew >/dev/null 2>&1; then
-    qt_prefix="$(brew --prefix qt 2>/dev/null || true)"
-    if [[ -n "$qt_prefix" ]]; then
-        cmake_arguments+=("-DCMAKE_PREFIX_PATH=$qt_prefix")
+    # Homebrew 的 Qt 与 ICU 通常是 keg-only。只加入 Qt 会导致 Mapnik 的
+    # mapnikConfig.cmake 在全新机器或 CI runner 上找不到 ICU 动态库。
+    # 这里动态读取公式前缀，同时兼容 Intel (/usr/local) 与 Apple Silicon
+    # (/opt/homebrew)，避免在脚本中硬编码处理器相关路径。
+    georeader_brew_prefixes=()
+    georeader_qt_prefix="$(brew --prefix qt 2>/dev/null || true)"
+    georeader_icu_prefix=""
+    for georeader_icu_formula in icu4c@78 icu4c@77 icu4c@76 icu4c; do
+        georeader_icu_prefix="$(
+            brew --prefix "$georeader_icu_formula" 2>/dev/null || true
+        )"
+        [[ -n "$georeader_icu_prefix" ]] && break
+    done
+
+    for georeader_formula in mapnik gdal; do
+        georeader_formula_prefix="$(
+            brew --prefix "$georeader_formula" 2>/dev/null || true
+        )"
+        if [[ -n "$georeader_formula_prefix" ]]; then
+            georeader_brew_prefixes+=("$georeader_formula_prefix")
+        fi
+    done
+    if [[ -n "$georeader_qt_prefix" ]]; then
+        georeader_brew_prefixes=(
+            "$georeader_qt_prefix"
+            "${georeader_brew_prefixes[@]}"
+        )
+    fi
+    if [[ -n "$georeader_icu_prefix" ]]; then
+        georeader_brew_prefixes=(
+            "$georeader_icu_prefix"
+            "${georeader_brew_prefixes[@]}"
+        )
+        cmake_arguments+=("-DICU_ROOT=$georeader_icu_prefix")
+    fi
+
+    if (( ${#georeader_brew_prefixes[@]} > 0 )); then
+        georeader_cmake_prefix_path="$(
+            IFS=';'
+            echo "${georeader_brew_prefixes[*]}"
+        )"
+        cmake_arguments+=(
+            "-DCMAKE_PREFIX_PATH=$georeader_cmake_prefix_path"
+        )
     fi
 fi
 
