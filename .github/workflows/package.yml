@@ -2,20 +2,51 @@ name: Build install packages
 
 on:
   workflow_dispatch:
+    inputs:
+      build_target:
+        description: Platforms to build in this run
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - windows-linux
+          - macos
+          - windows
+          - linux
+      reuse_run_id:
+        description: Previous run ID whose successful artifacts should be reused
+        type: string
+        required: false
+      publish_release:
+        description: Publish all collected platform packages to a GitHub Release
+        type: boolean
+        required: true
+        default: false
+      release_tag:
+        description: Release tag for a manual publish, for example v1.0.1
+        type: string
+        required: false
   push:
     tags:
       - "v*"
 
 permissions:
   contents: read
+  actions: read
 
 env:
   QT_VERSION: "6.8.3"
   VCPKG_COMMIT: "827a2e1203bc19941126c657166da44f2623acc4"
+  MAPNIK_VERSION: "4.3.0"
 
 jobs:
   macos:
     name: macOS ${{ matrix.name }}
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.build_target == 'all' ||
+      inputs.build_target == 'macos'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -49,6 +80,11 @@ jobs:
 
   windows:
     name: Windows x64
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.build_target == 'all' ||
+      inputs.build_target == 'windows-linux' ||
+      inputs.build_target == 'windows'
     runs-on: windows-2025
 
     steps:
@@ -73,11 +109,21 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vcpkg_installed
-          key: vcpkg-windows-x64-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+          key: >-
+            vcpkg-windows-x64-${{ env.VCPKG_COMMIT }}-mapnik-${{
+            env.MAPNIK_VERSION }}-${{ hashFiles(
+            'vcpkg.json', 'scripts/prepare_vcpkg_overlay.py') }}
 
       - name: Bootstrap vcpkg
         shell: pwsh
         run: .\.vcpkg\bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Prepare Mapnik 4.3 vcpkg overlay
+        shell: pwsh
+        run: >-
+          python scripts/prepare_vcpkg_overlay.py
+          --vcpkg-root .vcpkg
+          --output .vcpkg-overlays
 
       - name: Install NSIS
         shell: pwsh
@@ -95,6 +141,7 @@ jobs:
               "-DCMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE/.vcpkg/scripts/buildsystems/vcpkg.cmake"
               "-DVCPKG_INSTALLED_DIR=$installed"
               "-DVCPKG_TARGET_TRIPLET=x64-windows"
+              "-DVCPKG_OVERLAY_PORTS=$env:GITHUB_WORKSPACE/.vcpkg-overlays"
               "-DGEOREADER_BUNDLE_VCPKG_RUNTIME=ON"
               "-DGEOREADER_VCPKG_RUNTIME_ROOT=$installed/x64-windows"
             )
@@ -108,6 +155,11 @@ jobs:
 
   linux:
     name: Linux x64 DEB and RPM
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      inputs.build_target == 'all' ||
+      inputs.build_target == 'windows-linux' ||
+      inputs.build_target == 'linux'
     runs-on: ubuntu-24.04
 
     steps:
@@ -151,10 +203,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vcpkg_installed
-          key: vcpkg-linux-x64-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
+          key: >-
+            vcpkg-linux-x64-${{ env.VCPKG_COMMIT }}-mapnik-${{
+            env.MAPNIK_VERSION }}-${{ hashFiles(
+            'vcpkg.json', 'scripts/prepare_vcpkg_overlay.py') }}
 
       - name: Bootstrap vcpkg
         run: ./.vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Prepare Mapnik 4.3 vcpkg overlay
+        run: >-
+          python scripts/prepare_vcpkg_overlay.py
+          --vcpkg-root .vcpkg
+          --output .vcpkg-overlays
 
       - name: Build and create DEB/RPM packages
         run: |
@@ -164,6 +225,7 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/.vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_INSTALLED_DIR="$installed" \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DVCPKG_OVERLAY_PORTS="$GITHUB_WORKSPACE/.vcpkg-overlays" \
             -DGEOREADER_BUNDLE_VCPKG_RUNTIME=ON \
             -DGEOREADER_VCPKG_RUNTIME_ROOT="$installed/x64-linux"
 
@@ -182,3 +244,73 @@ jobs:
             dist/*.deb
             dist/*.rpm
           if-no-files-found: error
+
+  release:
+    name: Publish complete cross-platform release
+    needs: [macos, windows, linux]
+    if: >-
+      always() &&
+      (
+        startsWith(github.ref, 'refs/tags/') ||
+        (
+          github.event_name == 'workflow_dispatch' &&
+          inputs.publish_release
+        )
+      ) &&
+      (needs.macos.result == 'success' || needs.macos.result == 'skipped') &&
+      (needs.windows.result == 'success' || needs.windows.result == 'skipped') &&
+      (needs.linux.result == 'success' || needs.linux.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Download successful packages from a previous run
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          inputs.reuse_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.reuse_run_id }}
+          pattern: GeoReader-*
+          path: dist
+          merge-multiple: true
+
+      - name: Download packages built in this run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: GeoReader-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify the complete platform package set
+        shell: bash
+        run: |
+          test -n "$(find dist -maxdepth 1 -name '*x86_64*.dmg' -print -quit)"
+          test -n "$(find dist -maxdepth 1 -name '*arm64*.dmg' -print -quit)"
+          test -n "$(find dist -maxdepth 1 -name '*.exe' -print -quit)"
+          test -n "$(find dist -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$(find dist -maxdepth 1 -name '*.rpm' -print -quit)"
+          find dist -maxdepth 1 -type f -print | sort
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: >-
+            ${{ github.event_name == 'workflow_dispatch'
+                && inputs.release_tag || github.ref_name }}
+        run: |
+          if [[ -z "$RELEASE_TAG" ]]; then
+            echo "release_tag is required when publish_release is enabled." >&2
+            exit 2
+          fi
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" \
+              --target "$GITHUB_SHA" \
+              --title "GeoReader $RELEASE_TAG" \
+              --generate-notes
+          gh release upload "$RELEASE_TAG" dist/* --clobber

@@ -499,11 +499,32 @@ QT_QPA_PLATFORM=xcb ./build/GeoReader      # 强制 X11/XWayland
 | Windows x64 | `windows-2025` | NSIS `.exe` |
 | Linux x64 | `ubuntu-24.04` | `.deb` 和 `.rpm` |
 
-工作流在推送 `v*` 标签或从 Actions 页面手动运行时启动。每个安装包会
-作为 workflow artifact 上传；它不会自动创建 GitHub Release。vcpkg
-固定到 `vcpkg.json` 中的 baseline；Windows/Linux 使用 Qt 6.8 LTS
-系列并启用缓存，macOS 使用 runner 当前架构的 Homebrew Qt（要求
-Qt 6.8+）。
+工作流在推送 `v*` 标签或从 Actions 页面手动运行时启动。推送标签会
+构建全部平台，验证 DMG、EXE、DEB 和 RPM 均存在后自动创建或更新
+GitHub Release。手动运行可以通过 `build_target` 只选择 macOS、
+Windows、Linux 或 Windows + Linux，避免重复构建已经成功的平台。
+
+Windows/Linux 使用 Qt 6.8 LTS 和 vcpkg；项目根据固定 SHA-512 创建
+Mapnik 4.3.0 overlay port，因为 vcpkg 当前内置 Mapnik port 仍是
+4.0.7。macOS 使用 runner 当前架构的 Homebrew Qt、GDAL 和 Mapnik
+（要求 Qt 6.8+）。
+
+若一次构建只有部分平台失败，成功 job 上传的 artifact 仍可复用。例如
+运行 `30533107514` 已成功生成两个 macOS DMG，只需重新构建 Windows
+和 Linux，并将新旧产物合并发布为 `v1.0.1`：
+
+```bash
+gh workflow run package.yml \
+  --ref main \
+  -f build_target=windows-linux \
+  -f reuse_run_id=30533107514 \
+  -f publish_release=true \
+  -f release_tag=v1.0.1
+```
+
+`reuse_run_id` 必须来自同一仓库且 artifact 尚未过期。发布 job 会再次
+检查两个架构的 DMG、Windows EXE、Linux DEB 和 RPM；缺少任意一种时
+都不会创建不完整的 Release。
 
 发布新版本时，先同步修改 `project(... VERSION ...)` 与
 `vcpkg.json` 中的 `version-string`，然后创建标签：

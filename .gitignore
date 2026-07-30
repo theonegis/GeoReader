@@ -31,6 +31,7 @@
 
 # vcpkg 本地依赖与缓存
 /.vcpkg/
+/.vcpkg-overlays/
 /vcpkg_installed/
 /downloads/
 /packages/
