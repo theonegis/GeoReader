@@ -1,0 +1,35 @@
+# Qt 6.8's Linux deploy helper copies files through file(INSTALL), which
+# automatically prepends DESTDIR, but then rewrites plug-in RPATHs through
+# CMAKE_INSTALL_PREFIX without DESTDIR.  Run only the Qt deploy script with
+# an explicit staging prefix and an empty DESTDIR so both operations address
+# the same files.  Qt 6.9 and newer contain the equivalent fix upstream.
+
+set(_georeader_qt_deploy_script "@GEOREADER_QT_DEPLOY_SCRIPT@")
+set(_georeader_original_install_prefix "${CMAKE_INSTALL_PREFIX}")
+set(_georeader_original_destdir "$ENV{DESTDIR}")
+
+if(NOT _georeader_original_destdir STREQUAL "")
+    if(DEFINED QT_DEPLOY_PREFIX)
+        set(_georeader_had_qt_deploy_prefix TRUE)
+        set(_georeader_original_qt_deploy_prefix "${QT_DEPLOY_PREFIX}")
+    else()
+        set(_georeader_had_qt_deploy_prefix FALSE)
+    endif()
+
+    set(QT_DEPLOY_PREFIX
+        "${_georeader_original_destdir}${_georeader_original_install_prefix}")
+    set(CMAKE_INSTALL_PREFIX "${QT_DEPLOY_PREFIX}")
+    set(ENV{DESTDIR} "")
+endif()
+
+include("${_georeader_qt_deploy_script}")
+
+if(NOT _georeader_original_destdir STREQUAL "")
+    set(ENV{DESTDIR} "${_georeader_original_destdir}")
+    set(CMAKE_INSTALL_PREFIX "${_georeader_original_install_prefix}")
+    if(_georeader_had_qt_deploy_prefix)
+        set(QT_DEPLOY_PREFIX "${_georeader_original_qt_deploy_prefix}")
+    else()
+        unset(QT_DEPLOY_PREFIX)
+    endif()
+endif()

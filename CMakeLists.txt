@@ -369,7 +369,19 @@ if(NOT APPLE)
         NO_UNSUPPORTED_PLATFORM_ERROR
         ${_georeader_qt_deploy_options}
     )
-    install(SCRIPT "${GEOREADER_QT_DEPLOY_SCRIPT}")
+    if(UNIX AND Qt6_VERSION VERSION_LESS 6.9)
+        # Qt 6.8's generic Linux deploy helper installs into DESTDIR but
+        # rewrites plug-in RPATHs through the un-staged install prefix.  Use a
+        # narrow wrapper until the upstream Qt 6.9 path handling is available.
+        configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/RunQt68Deploy.cmake.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/RunQt68Deploy.cmake"
+            @ONLY)
+        install(SCRIPT
+            "${CMAKE_CURRENT_BINARY_DIR}/RunQt68Deploy.cmake")
+    else()
+        install(SCRIPT "${GEOREADER_QT_DEPLOY_SCRIPT}")
+    endif()
 endif()
 
 set(CPACK_PACKAGE_NAME "GeoReader")
@@ -395,9 +407,9 @@ elseif(WIN32)
 else()
     set(CPACK_GENERATOR "DEB;RPM")
     set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
-    # Qt 6.8's Linux deployment helper uses $ENV{DESTDIR} when rewriting
-    # deployed plug-in RPATHs. Make CPack expose its staging root through
-    # DESTDIR so the helper edits packaged files instead of looking in /usr.
+    # Keep system packages rooted at /usr and expose CPack's staging directory
+    # to the Qt 6.8 compatibility wrapper above.
+    set(CPACK_PACKAGE_RELOCATABLE OFF)
     set(CPACK_SET_DESTDIR ON)
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "GeoReader maintainers")
     set(CPACK_DEBIAN_PACKAGE_SECTION "science")
