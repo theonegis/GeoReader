@@ -3,6 +3,7 @@
 /cmake-build-*/
 /stage*/
 /_CPack_Packages/
+__pycache__
 
 # CMake 在源码目录误配置时产生的文件
 /CMakeCache.txt

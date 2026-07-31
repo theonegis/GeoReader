@@ -31,6 +31,12 @@ find_package(Qt6 6.8 REQUIRED COMPONENTS
     Concurrent
     LinguistTools
 )
+if(UNIX AND NOT APPLE)
+    # Qt's IBus platform input context depends on Qt DBus.  Qt 6.8 does not
+    # deploy non-default input context plugins automatically, so make the
+    # module available for the explicit Linux package installation below.
+    find_package(Qt6 6.8 REQUIRED COMPONENTS DBus)
+endif()
 find_package(GDAL 3.8 CONFIG REQUIRED)
 
 set(_georeader_dependency_roots)
@@ -347,11 +353,15 @@ if(NOT APPLE)
         # in Qt 6.10. Qt 6.8 still exposes imported targets for the plugins we
         # require, so install those explicitly and let the regular Qt deploy
         # script collect the remaining QML modules, plugins and libraries.
-        set(_georeader_legacy_linux_qt_plugins
+        set(_georeader_legacy_linux_platform_plugins
             Qt6::QOffscreenIntegrationPlugin
             Qt6::QWaylandIntegrationPlugin)
+        set(_georeader_legacy_linux_input_plugins
+            Qt6::QComposePlatformInputContextPlugin
+            Qt6::QIbusPlatformInputContextPlugin)
         foreach(_qt_plugin_target IN LISTS
-                _georeader_legacy_linux_qt_plugins)
+                _georeader_legacy_linux_platform_plugins
+                _georeader_legacy_linux_input_plugins)
             if(NOT TARGET "${_qt_plugin_target}")
                 message(FATAL_ERROR
                     "Required Qt Linux plugin target is unavailable: "
@@ -359,9 +369,18 @@ if(NOT APPLE)
             endif()
         endforeach()
         install(IMPORTED_RUNTIME_ARTIFACTS
-            ${_georeader_legacy_linux_qt_plugins}
+            ${_georeader_legacy_linux_platform_plugins}
             LIBRARY DESTINATION
                 "${CMAKE_INSTALL_LIBDIR}/qt6/plugins/platforms")
+        install(IMPORTED_RUNTIME_ARTIFACTS
+            ${_georeader_legacy_linux_input_plugins}
+            LIBRARY DESTINATION
+                "${CMAKE_INSTALL_LIBDIR}/qt6/plugins/platforminputcontexts")
+        # The input plugins are intentionally outside Qt 6.8's default plugin
+        # set, so its dependency scanner does not discover Qt DBus through
+        # them. Install the module explicitly with the plugins.
+        install(IMPORTED_RUNTIME_ARTIFACTS Qt6::DBus
+            LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}")
     endif()
     qt_generate_deploy_qml_app_script(
         TARGET GeoReader
@@ -413,13 +432,15 @@ else()
     set(CPACK_SET_DESTDIR ON)
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "GeoReader maintainers")
     set(CPACK_DEBIAN_PACKAGE_SECTION "science")
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS
-        "libwayland-client0, libwayland-cursor0, libwayland-egl1, libxkbcommon0")
+    string(CONCAT CPACK_DEBIAN_PACKAGE_DEPENDS
+        "libdbus-1-3, libwayland-client0, libwayland-cursor0, "
+        "libwayland-egl1, libxkbcommon0")
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)
     set(CPACK_RPM_PACKAGE_LICENSE "PolyForm-Noncommercial-1.0.0")
     set(CPACK_RPM_PACKAGE_GROUP "Applications/Engineering")
-    set(CPACK_RPM_PACKAGE_REQUIRES "wayland-libs, libxkbcommon")
+    set(CPACK_RPM_PACKAGE_REQUIRES
+        "dbus-libs, wayland-libs, libxkbcommon")
     set(CPACK_RPM_FILE_NAME RPM-DEFAULT)
 endif()
 

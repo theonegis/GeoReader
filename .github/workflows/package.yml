@@ -315,15 +315,42 @@ jobs:
 
           deb_contents="$(dpkg-deb -c "$deb_package")"
           rpm_contents="$(rpm -qpl "$rpm_package")"
-          for contents in "$deb_contents" "$rpm_contents"; do
-            grep -Eq 'mapnik/input/geojson\.input' <<<"$contents"
-            grep -Eq 'mapnik/input/(gdal\+ogr|gdal|ogr)\.input' <<<"$contents"
-            grep -Eq 'mapnik/input/raster\.input' <<<"$contents"
-            grep -Eq 'mapnik/input/shape\.input' <<<"$contents"
-            grep -Eq 'platforms/libqoffscreen\.so' <<<"$contents"
-            grep -Eq 'platforms/libqwayland(-egl|-generic)?\.so' <<<"$contents"
-            grep -Eq 'platforminputcontexts/libcomposeplatforminputcontextplugin\.so' <<<"$contents"
-            grep -Eq 'platforminputcontexts/libibusplatforminputcontextplugin\.so' <<<"$contents"
+          require_package_entry() {
+            local package_name="$1"
+            local contents="$2"
+            local pattern="$3"
+            local description="$4"
+            if ! grep -Eq "$pattern" <<<"$contents"; then
+              echo "::error title=Incomplete ${package_name} package::Missing ${description}" >&2
+              return 1
+            fi
+          }
+          for package_name in DEB RPM; do
+            if [[ "$package_name" == DEB ]]; then
+              contents="$deb_contents"
+            else
+              contents="$rpm_contents"
+            fi
+            require_package_entry "$package_name" "$contents" \
+              'mapnik/input/geojson\.input' "Mapnik GeoJSON input plugin"
+            require_package_entry "$package_name" "$contents" \
+              'mapnik/input/(gdal\+ogr|gdal|ogr)\.input' "Mapnik GDAL/OGR input plugin"
+            require_package_entry "$package_name" "$contents" \
+              'mapnik/input/raster\.input' "Mapnik raster input plugin"
+            require_package_entry "$package_name" "$contents" \
+              'mapnik/input/shape\.input' "Mapnik shape input plugin"
+            require_package_entry "$package_name" "$contents" \
+              'platforms/libqoffscreen\.so' "Qt offscreen platform plugin"
+            require_package_entry "$package_name" "$contents" \
+              'platforms/libqwayland(-egl|-generic)?\.so' "Qt Wayland platform plugin"
+            require_package_entry "$package_name" "$contents" \
+              'platforminputcontexts/libcomposeplatforminputcontextplugin\.so' \
+              "Qt Compose input method plugin"
+            require_package_entry "$package_name" "$contents" \
+              'platforminputcontexts/libibusplatforminputcontextplugin\.so' \
+              "Qt IBus input method plugin"
+            require_package_entry "$package_name" "$contents" \
+              'libQt6DBus\.so\.6' "Qt DBus runtime library"
           done
 
           deb_root="$(mktemp -d "$RUNNER_TEMP/georeader-deb.XXXXXX")"
@@ -335,8 +362,18 @@ jobs:
             -path '*/platforms/libqoffscreen.so' -print -quit)"
           wayland_plugin="$(find "$deb_root" \
             -path '*/platforms/libqwayland*.so' -print -quit)"
+          compose_plugin="$(find "$deb_root" \
+            -path '*/platforminputcontexts/libcomposeplatforminputcontextplugin.so' \
+            -print -quit)"
+          ibus_plugin="$(find "$deb_root" \
+            -path '*/platforminputcontexts/libibusplatforminputcontextplugin.so' \
+            -print -quit)"
           for runtime_file in \
-              "$executable" "$offscreen_plugin" "$wayland_plugin"; do
+              "$executable" \
+              "$offscreen_plugin" \
+              "$wayland_plugin" \
+              "$compose_plugin" \
+              "$ibus_plugin"; do
             test -f "$runtime_file"
             if ldd "$runtime_file" | grep -F 'not found'; then
               echo "Packaged runtime has missing libraries: $runtime_file" >&2

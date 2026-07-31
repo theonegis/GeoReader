@@ -41,6 +41,16 @@ class ReleaseTripletTests(unittest.TestCase):
         )
         self.assertIn("Qt6::QOffscreenIntegrationPlugin", cmake)
         self.assertIn("Qt6::QWaylandIntegrationPlugin", cmake)
+        self.assertIn(
+            "Qt6::QComposePlatformInputContextPlugin",
+            cmake,
+        )
+        self.assertIn("Qt6::QIbusPlatformInputContextPlugin", cmake)
+        self.assertIn(
+            '"${CMAKE_INSTALL_LIBDIR}/qt6/plugins/platforminputcontexts"',
+            cmake,
+        )
+        self.assertIn("IMPORTED_RUNTIME_ARTIFACTS Qt6::DBus", cmake)
         self.assertIn("install(IMPORTED_RUNTIME_ARTIFACTS", cmake)
         self.assertIn(
             "EXCLUDE_PLUGINS libfcitx5platforminputcontextplugin",
@@ -181,6 +191,9 @@ class ReleaseTripletTests(unittest.TestCase):
             "libqwayland(",
             "libcomposeplatforminputcontextplugin",
             "libibusplatforminputcontextplugin",
+            "libQt6DBus",
+            "require_package_entry",
+            "Incomplete ${package_name} package",
         ):
             self.assertIn(expected, workflow)
 
