@@ -326,7 +326,7 @@ endif()
 
 if(NOT APPLE)
     set(_georeader_qt_deploy_options)
-    if(UNIX)
+    if(UNIX AND Qt6_VERSION VERSION_GREATER_EQUAL 6.10)
         # Desktop integration plugins may be installed beside Qt's own
         # plugins without being part of the Qt SDK. Arch's Fcitx5, qt6ct and
         # Kvantum plugins have no writable RPATH entry, so Qt's deploy script
@@ -342,6 +342,26 @@ if(NOT APPLE)
                 qwayland-generic
             EXCLUDE_PLUGINS libfcitx5platforminputcontextplugin
             EXCLUDE_PLUGIN_TYPES platformthemes styles)
+    elseif(UNIX)
+        # Plugin selection arguments were added to the deployment generator
+        # in Qt 6.10. Qt 6.8 still exposes imported targets for the plugins we
+        # require, so install those explicitly and let the regular Qt deploy
+        # script collect the remaining QML modules, plugins and libraries.
+        set(_georeader_legacy_linux_qt_plugins
+            Qt6::QOffscreenIntegrationPlugin
+            Qt6::QWaylandIntegrationPlugin)
+        foreach(_qt_plugin_target IN LISTS
+                _georeader_legacy_linux_qt_plugins)
+            if(NOT TARGET "${_qt_plugin_target}")
+                message(FATAL_ERROR
+                    "Required Qt Linux plugin target is unavailable: "
+                    "${_qt_plugin_target}")
+            endif()
+        endforeach()
+        install(IMPORTED_RUNTIME_ARTIFACTS
+            ${_georeader_legacy_linux_qt_plugins}
+            LIBRARY DESTINATION
+                "${CMAKE_INSTALL_LIBDIR}/qt6/plugins/platforms")
     endif()
     qt_generate_deploy_qml_app_script(
         TARGET GeoReader

@@ -33,6 +33,13 @@ class ReleaseTripletTests(unittest.TestCase):
         ):
             self.assertIn(plugin, cmake)
         self.assertIn(
+            "Qt6_VERSION VERSION_GREATER_EQUAL 6.10",
+            cmake,
+        )
+        self.assertIn("Qt6::QOffscreenIntegrationPlugin", cmake)
+        self.assertIn("Qt6::QWaylandIntegrationPlugin", cmake)
+        self.assertIn("install(IMPORTED_RUNTIME_ARTIFACTS", cmake)
+        self.assertIn(
             "EXCLUDE_PLUGINS libfcitx5platforminputcontextplugin",
             cmake,
         )
@@ -86,7 +93,7 @@ class ReleaseTripletTests(unittest.TestCase):
         for expected in (
             "dpkg-deb -x",
             'rpm -qpl "$rpm_package"',
-            'ldd "$executable"',
+            'ldd "$runtime_file"',
             "--smoke-test",
             "mapnik/input/geojson",
             "mapnik/input/raster",

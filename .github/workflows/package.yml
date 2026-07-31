@@ -331,10 +331,18 @@ jobs:
           executable="$deb_root/usr/bin/GeoReader"
           test -x "$executable"
 
-          if ldd "$executable" | grep -F 'not found'; then
-            echo "The packaged GeoReader executable has missing libraries." >&2
-            exit 1
-          fi
+          offscreen_plugin="$(find "$deb_root" \
+            -path '*/platforms/libqoffscreen.so' -print -quit)"
+          wayland_plugin="$(find "$deb_root" \
+            -path '*/platforms/libqwayland*.so' -print -quit)"
+          for runtime_file in \
+              "$executable" "$offscreen_plugin" "$wayland_plugin"; do
+            test -f "$runtime_file"
+            if ldd "$runtime_file" | grep -F 'not found'; then
+              echo "Packaged runtime has missing libraries: $runtime_file" >&2
+              exit 1
+            fi
+          done
 
           QT_QPA_PLATFORM=offscreen \
           QT_QUICK_BACKEND=software \
