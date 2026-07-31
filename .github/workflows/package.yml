@@ -14,6 +14,7 @@ on:
           - macos
           - windows
           - linux
+          - release-only
       reuse_run_id:
         description: Previous run ID whose successful artifacts should be reused
         type: string
@@ -51,6 +52,24 @@ jobs:
 
       - name: Run build metadata tests
         run: python3 -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Validate release-only inputs
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          inputs.build_target == 'release-only'
+        env:
+          PUBLISH_RELEASE: ${{ inputs.publish_release }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          REUSE_RUN_ID: ${{ inputs.reuse_run_id }}
+        run: |
+          if [[ "$PUBLISH_RELEASE" != "true" ]]; then
+            echo "publish_release must be enabled for release-only." >&2
+            exit 2
+          fi
+          if [[ -z "$RELEASE_TAG" || -z "$REUSE_RUN_ID" ]]; then
+            echo "release_tag and reuse_run_id are required for release-only." >&2
+            exit 2
+          fi
 
   macos:
     name: macOS ${{ matrix.name }}
@@ -512,6 +531,9 @@ jobs:
           merge-multiple: true
 
       - name: Download packages built in this run
+        if: >-
+          github.event_name != 'workflow_dispatch' ||
+          inputs.build_target != 'release-only'
         uses: actions/download-artifact@v4
         with:
           pattern: GeoReader-*
@@ -540,9 +562,13 @@ jobs:
             echo "release_tag is required when publish_release is enabled." >&2
             exit 2
           fi
-          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+          gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "GeoReader $RELEASE_TAG" \
               --generate-notes
-          gh release upload "$RELEASE_TAG" dist/* --clobber
+          gh release upload "$RELEASE_TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

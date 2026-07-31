@@ -208,6 +208,18 @@ class ReleaseTripletTests(unittest.TestCase):
         self.assertIn("actions/cache/restore@v4", workflow)
         self.assertIn("actions/cache/save@v4", workflow)
 
+    def test_release_commands_explicitly_target_the_repository(self) -> None:
+        workflow = (
+            PROJECT_ROOT / ".github" / "workflows" / "package.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("release-only", workflow)
+        self.assertIn("Validate release-only inputs", workflow)
+        self.assertEqual(
+            workflow.count('--repo "$GITHUB_REPOSITORY"'),
+            3,
+        )
+        self.assertIn("inputs.build_target != 'release-only'", workflow)
+
     def test_windows_workflow_forces_msvc_and_vcpkg_pkgconf(self) -> None:
         workflow = (
             PROJECT_ROOT / ".github" / "workflows" / "package.yml"
