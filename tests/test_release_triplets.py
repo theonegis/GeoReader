@@ -26,6 +26,33 @@ class ReleaseTripletTests(unittest.TestCase):
         )
         self.assertIn("${GEOREADER_MAPNIK_LINK_TARGETS}", cmake)
 
+    def test_required_mapnik_plugins_are_resolved_and_installed_explicitly(
+        self,
+    ) -> None:
+        cmake = (PROJECT_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+        for plugin in (
+            "geojson.input",
+            "gdal+ogr.input",
+            "gdal.input",
+            "ogr.input",
+            "raster.input",
+            "shape.input",
+        ):
+            self.assertIn(plugin, cmake)
+        self.assertIn("GEOREADER_MAPNIK_INPUT_PLUGIN_FILES", cmake)
+        self.assertIn(
+            "No single Mapnik input directory contains all required plugins",
+            cmake,
+        )
+        self.assertIn(
+            "install(FILES ${GEOREADER_MAPNIK_INPUT_PLUGIN_FILES}",
+            cmake,
+        )
+        self.assertNotIn(
+            'install(DIRECTORY "${MAPNIK_INPUT_PLUGIN_DIR}/"',
+            cmake,
+        )
+
     def test_linux_qt_deploy_selects_portable_plugins(self) -> None:
         cmake = (PROJECT_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
         for plugin in (
@@ -181,19 +208,22 @@ class ReleaseTripletTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         for expected in (
             "dpkg-deb -x",
-            'rpm -qpl "$rpm_package"',
+            'rpm2cpio "$rpm_package"',
+            "cpio --extract --make-directories --quiet",
             'ldd "$runtime_file"',
             "--smoke-test",
-            "mapnik/input/geojson",
-            "mapnik/input/raster",
-            "mapnik/input/shape",
+            "mapnik/input/geojson.input",
+            "mapnik/input/raster.input",
+            "mapnik/input/shape.input",
             "libqoffscreen",
-            "libqwayland(",
+            "libqwayland*.so",
             "libcomposeplatforminputcontextplugin",
             "libibusplatforminputcontextplugin",
             "libQt6DBus",
             "require_package_entry",
             "Incomplete ${package_name} package",
+            "mapnik-input-v2",
+            "if: always()",
         ):
             self.assertIn(expected, workflow)
 

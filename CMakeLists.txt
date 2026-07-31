@@ -86,12 +86,6 @@ if(TARGET mapnik::mapnik)
             list(APPEND GEOREADER_MAPNIK_LINK_TARGETS "${_mapnik_target}")
         endif()
     endforeach()
-    # Homebrew Mapnik 4.2/4.3 的辅助函数在 CMAKE_BUILD_TYPE 为空时会向
-    # list(FIND) 传入缺失参数。多配置生成器也可能没有该变量，因此这种
-    # 情况直接使用下方跨平台 find_path，避免配置阶段提前失败。
-    if(COMMAND mapnik_find_plugin_dir AND CMAKE_BUILD_TYPE)
-        mapnik_find_plugin_dir(MAPNIK_INPUT_PLUGIN_DIR)
-    endif()
 else()
     find_path(MAPNIK_INCLUDE_DIR mapnik/map.hpp
         HINTS
@@ -143,6 +137,80 @@ endif()
 if(NOT ICU_INCLUDE_DIR OR NOT ICU_UC_LIBRARY OR NOT ICU_I18N_LIBRARY)
     message(FATAL_ERROR "ICU uc and i18n development libraries were not found.")
 endif()
+
+set(_georeader_mapnik_input_search_dirs)
+if(MAPNIK_INPUT_PLUGIN_DIR)
+    list(APPEND _georeader_mapnik_input_search_dirs
+        "${MAPNIK_INPUT_PLUGIN_DIR}")
+endif()
+foreach(_dependency_root IN LISTS _georeader_dependency_roots)
+    list(APPEND _georeader_mapnik_input_search_dirs
+        "${_dependency_root}/lib/mapnik/input"
+        "${_dependency_root}/bin/mapnik/input"
+        "${_dependency_root}/bin/plugins/input"
+        "${_dependency_root}/tools/mapnik/plugins/input"
+        "${_dependency_root}/plugins/mapnik/input"
+        "${_dependency_root}/mapnik/input")
+endforeach()
+list(APPEND _georeader_mapnik_input_search_dirs
+    "/opt/homebrew/opt/mapnik/lib/mapnik/input"
+    "/usr/local/lib/mapnik/input"
+    "/usr/lib64/mapnik/input"
+    "/usr/lib/x86_64-linux-gnu/mapnik/input"
+    "/usr/lib/mapnik/input")
+list(REMOVE_DUPLICATES _georeader_mapnik_input_search_dirs)
+
+function(_georeader_resolve_mapnik_input_plugins output_files output_dir)
+    foreach(_candidate_dir IN LISTS _georeader_mapnik_input_search_dirs)
+        set(_candidate_files)
+        set(_candidate_complete TRUE)
+        foreach(_plugin_name IN ITEMS geojson.input raster.input shape.input)
+            if(EXISTS "${_candidate_dir}/${_plugin_name}")
+                list(APPEND _candidate_files
+                    "${_candidate_dir}/${_plugin_name}")
+            else()
+                set(_candidate_complete FALSE)
+            endif()
+        endforeach()
+
+        if(EXISTS "${_candidate_dir}/gdal+ogr.input")
+            list(APPEND _candidate_files
+                "${_candidate_dir}/gdal+ogr.input")
+        elseif(EXISTS "${_candidate_dir}/gdal.input"
+               AND EXISTS "${_candidate_dir}/ogr.input")
+            list(APPEND _candidate_files
+                "${_candidate_dir}/gdal.input"
+                "${_candidate_dir}/ogr.input")
+        else()
+            set(_candidate_complete FALSE)
+        endif()
+
+        if(_candidate_complete)
+            set("${output_files}" "${_candidate_files}" PARENT_SCOPE)
+            set("${output_dir}" "${_candidate_dir}" PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+    set("${output_files}" "" PARENT_SCOPE)
+    set("${output_dir}" "" PARENT_SCOPE)
+endfunction()
+
+_georeader_resolve_mapnik_input_plugins(
+    GEOREADER_MAPNIK_INPUT_PLUGIN_FILES
+    GEOREADER_MAPNIK_RESOLVED_INPUT_DIR)
+if(NOT GEOREADER_MAPNIK_INPUT_PLUGIN_FILES)
+    list(JOIN _georeader_mapnik_input_search_dirs "\n  " _search_dirs)
+    message(FATAL_ERROR
+        "No single Mapnik input directory contains all required plugins: "
+        "GeoJSON, raster, shape, and GDAL/OGR.\n"
+        "Searched directories:\n  ${_search_dirs}")
+endif()
+set(MAPNIK_INPUT_PLUGIN_DIR "${GEOREADER_MAPNIK_RESOLVED_INPUT_DIR}")
+message(STATUS
+    "GeoReader Mapnik input plugins: ${GEOREADER_MAPNIK_RESOLVED_INPUT_DIR}")
+foreach(_plugin_file IN LISTS GEOREADER_MAPNIK_INPUT_PLUGIN_FILES)
+    message(STATUS "  ${_plugin_file}")
+endforeach()
 
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -274,16 +342,8 @@ else()
         "${CMAKE_INSTALL_LIBDIR}/georeader/mapnik/input")
 endif()
 
-install(DIRECTORY "${MAPNIK_INPUT_PLUGIN_DIR}/"
-    DESTINATION "${GEOREADER_MAPNIK_PLUGIN_INSTALL_DIR}"
-    FILES_MATCHING
-        PATTERN "gdal+ogr.input"
-        PATTERN "gdal.input"
-        PATTERN "ogr.input"
-        PATTERN "geojson.input"
-        PATTERN "shape.input"
-        PATTERN "raster.input"
-)
+install(FILES ${GEOREADER_MAPNIK_INPUT_PLUGIN_FILES}
+    DESTINATION "${GEOREADER_MAPNIK_PLUGIN_INSTALL_DIR}")
 
 if(GEOREADER_BUNDLE_VCPKG_RUNTIME)
     if(NOT GEOREADER_VCPKG_RUNTIME_ROOT)

@@ -230,6 +230,7 @@ jobs:
             autoconf \
             autoconf-archive \
             automake \
+            cpio \
             libtool \
             ninja-build \
             rpm \
@@ -262,7 +263,8 @@ jobs:
         with:
           path: vcpkg_installed
           key: >-
-            vcpkg-linux-x64-${{ env.VCPKG_COMMIT }}-mapnik-${{
+            vcpkg-linux-x64-mapnik-input-v2-${{
+            env.VCPKG_COMMIT }}-mapnik-${{
             env.MAPNIK_VERSION }}-${{ hashFiles(
             'vcpkg.json', 'scripts/prepare_vcpkg_overlay.py',
             'cmake/triplets/x64-linux-release.cmake') }}
@@ -313,48 +315,60 @@ jobs:
           test -n "$deb_package"
           test -n "$rpm_package"
 
-          deb_contents="$(dpkg-deb -c "$deb_package")"
-          rpm_contents="$(rpm -qpl "$rpm_package")"
+          deb_root="$(mktemp -d "$RUNNER_TEMP/georeader-deb.XXXXXX")"
+          rpm_root="$(mktemp -d "$RUNNER_TEMP/georeader-rpm.XXXXXX")"
+          dpkg-deb -x "$deb_package" "$deb_root"
+          rpm_package="$(realpath "$rpm_package")"
+          (
+            cd "$rpm_root"
+            rpm2cpio "$rpm_package" | cpio --extract --make-directories --quiet
+          )
+
           require_package_entry() {
             local package_name="$1"
-            local contents="$2"
+            local package_root="$2"
             local pattern="$3"
             local description="$4"
-            if ! grep -Eq "$pattern" <<<"$contents"; then
+            local match
+            match="$(find "$package_root" -path "$pattern" -print -quit)"
+            if [[ -z "$match" ]]; then
+              echo "${package_name}: missing ${description} (${pattern})" >&2
               echo "::error title=Incomplete ${package_name} package::Missing ${description}" >&2
               return 1
             fi
           }
-          for package_name in DEB RPM; do
-            if [[ "$package_name" == DEB ]]; then
-              contents="$deb_contents"
-            else
-              contents="$rpm_contents"
+          package_names=(DEB RPM)
+          package_roots=("$deb_root" "$rpm_root")
+          for index in "${!package_names[@]}"; do
+            package_name="${package_names[$index]}"
+            package_root="${package_roots[$index]}"
+            require_package_entry "$package_name" "$package_root" \
+              '*/mapnik/input/geojson.input' "Mapnik GeoJSON input plugin"
+            if [[ -z "$(find "$package_root" \
+                -path '*/mapnik/input/gdal+ogr.input' -print -quit)" ]]; then
+              require_package_entry "$package_name" "$package_root" \
+                '*/mapnik/input/gdal.input' "Mapnik GDAL input plugin"
+              require_package_entry "$package_name" "$package_root" \
+                '*/mapnik/input/ogr.input' "Mapnik OGR input plugin"
             fi
-            require_package_entry "$package_name" "$contents" \
-              'mapnik/input/geojson\.input' "Mapnik GeoJSON input plugin"
-            require_package_entry "$package_name" "$contents" \
-              'mapnik/input/(gdal\+ogr|gdal|ogr)\.input' "Mapnik GDAL/OGR input plugin"
-            require_package_entry "$package_name" "$contents" \
-              'mapnik/input/raster\.input' "Mapnik raster input plugin"
-            require_package_entry "$package_name" "$contents" \
-              'mapnik/input/shape\.input' "Mapnik shape input plugin"
-            require_package_entry "$package_name" "$contents" \
-              'platforms/libqoffscreen\.so' "Qt offscreen platform plugin"
-            require_package_entry "$package_name" "$contents" \
-              'platforms/libqwayland(-egl|-generic)?\.so' "Qt Wayland platform plugin"
-            require_package_entry "$package_name" "$contents" \
-              'platforminputcontexts/libcomposeplatforminputcontextplugin\.so' \
+            require_package_entry "$package_name" "$package_root" \
+              '*/mapnik/input/raster.input' "Mapnik raster input plugin"
+            require_package_entry "$package_name" "$package_root" \
+              '*/mapnik/input/shape.input' "Mapnik shape input plugin"
+            require_package_entry "$package_name" "$package_root" \
+              '*/platforms/libqoffscreen.so' "Qt offscreen platform plugin"
+            require_package_entry "$package_name" "$package_root" \
+              '*/platforms/libqwayland*.so' "Qt Wayland platform plugin"
+            require_package_entry "$package_name" "$package_root" \
+              '*/platforminputcontexts/libcomposeplatforminputcontextplugin.so' \
               "Qt Compose input method plugin"
-            require_package_entry "$package_name" "$contents" \
-              'platforminputcontexts/libibusplatforminputcontextplugin\.so' \
+            require_package_entry "$package_name" "$package_root" \
+              '*/platforminputcontexts/libibusplatforminputcontextplugin.so' \
               "Qt IBus input method plugin"
-            require_package_entry "$package_name" "$contents" \
-              'libQt6DBus\.so\.6' "Qt DBus runtime library"
+            require_package_entry "$package_name" "$package_root" \
+              '*/libQt6DBus.so.6*' "Qt DBus runtime library"
           done
 
-          deb_root="$(mktemp -d "$RUNNER_TEMP/georeader-deb.XXXXXX")"
-          dpkg-deb -x "$deb_package" "$deb_root"
           executable="$deb_root/usr/bin/GeoReader"
           test -x "$executable"
 
@@ -368,12 +382,17 @@ jobs:
           ibus_plugin="$(find "$deb_root" \
             -path '*/platforminputcontexts/libibusplatforminputcontextplugin.so' \
             -print -quit)"
+          mapfile -t mapnik_plugins < <(
+            find "$deb_root" -path '*/mapnik/input/*.input' -type f -print
+          )
+          test "${#mapnik_plugins[@]}" -ge 4
           for runtime_file in \
               "$executable" \
               "$offscreen_plugin" \
               "$wayland_plugin" \
               "$compose_plugin" \
-              "$ibus_plugin"; do
+              "$ibus_plugin" \
+              "${mapnik_plugins[@]}"; do
             test -f "$runtime_file"
             if ldd "$runtime_file" | grep -F 'not found'; then
               echo "Packaged runtime has missing libraries: $runtime_file" >&2
@@ -387,6 +406,7 @@ jobs:
             --smoke-test "$GITHUB_WORKSPACE/tests/data/demo.geojson"
 
       - name: Upload Linux packages
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: GeoReader-Linux-x64
