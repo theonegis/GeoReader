@@ -395,6 +395,10 @@ elseif(WIN32)
 else()
     set(CPACK_GENERATOR "DEB;RPM")
     set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+    # Qt 6.8's Linux deployment helper uses $ENV{DESTDIR} when rewriting
+    # deployed plug-in RPATHs. Make CPack expose its staging root through
+    # DESTDIR so the helper edits packaged files instead of looking in /usr.
+    set(CPACK_SET_DESTDIR ON)
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "GeoReader maintainers")
     set(CPACK_DEBIAN_PACKAGE_SECTION "science")
     set(CPACK_DEBIAN_PACKAGE_DEPENDS

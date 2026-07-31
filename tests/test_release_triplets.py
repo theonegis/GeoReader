@@ -48,6 +48,10 @@ class ReleaseTripletTests(unittest.TestCase):
             cmake,
         )
 
+    def test_linux_cpack_stages_qt_deployment_with_destdir(self) -> None:
+        cmake = (PROJECT_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn("set(CPACK_SET_DESTDIR ON)", cmake)
+
     def test_ci_triplets_only_build_release_dependencies(self) -> None:
         for platform in ("linux", "windows"):
             triplet = (
