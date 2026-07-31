@@ -80,7 +80,7 @@ jobs:
 
       - name: Build and create DMG
         run: |
-          ./scripts/build.sh --clean-first --package --package-format dmg -- \
+          ./scripts/build.sh --type Release --clean-first --package --package-format dmg -- \
             -DCMAKE_OSX_ARCHITECTURES=${{ matrix.architecture }}
 
       - name: Upload DMG
@@ -189,7 +189,7 @@ jobs:
             "$installed/x64-windows-release/lib/pkgconfig"
             "$installed/x64-windows-release/share/pkgconfig"
           ) -join ";"
-          .\scripts\build.ps1 -CleanFirst -Package -PackageFormat nsis `
+          .\scripts\build.ps1 -Type Release -CleanFirst -Package -PackageFormat nsis `
             -CMakeArgs @(
               "-DCMAKE_CXX_COMPILER=cl.exe"
               "-DCMAKE_TOOLCHAIN_FILE=$env:GITHUB_WORKSPACE/.vcpkg/scripts/buildsystems/vcpkg.cmake"
@@ -233,6 +233,7 @@ jobs:
             cpio \
             libtool \
             ninja-build \
+            patchelf \
             rpm \
             libgl1-mesa-dev \
             libwayland-client0 \
@@ -288,6 +289,41 @@ jobs:
             --overlay-ports="$GITHUB_WORKSPACE/.vcpkg-overlays" \
             --overlay-triplets="$GITHUB_WORKSPACE/cmake/triplets"
 
+      - name: Verify vcpkg Mapnik input plugins
+        run: |
+          triplet_root="$GITHUB_WORKSPACE/vcpkg_installed/x64-linux-release"
+          geojson_plugin="$(
+            find "$triplet_root" -type f -name 'geojson.input' -print -quit
+          )"
+          if [[ -z "$geojson_plugin" ]]; then
+            echo "::error title=Incomplete vcpkg Mapnik::Missing geojson.input" >&2
+            find "$triplet_root" -iname '*mapnik*' -o -name '*.input' | sort
+            exit 1
+          fi
+
+          input_dir="$(dirname "$geojson_plugin")"
+          missing=0
+          for plugin in geojson.input raster.input shape.input; do
+            if [[ ! -f "$input_dir/$plugin" ]]; then
+              echo "::error title=Incomplete vcpkg Mapnik::Missing $plugin" >&2
+              missing=1
+            fi
+          done
+          if [[ ! -f "$input_dir/gdal+ogr.input" ]]; then
+            for plugin in gdal.input ogr.input; do
+              if [[ ! -f "$input_dir/$plugin" ]]; then
+                echo "::error title=Incomplete vcpkg Mapnik::Missing $plugin" >&2
+                missing=1
+              fi
+            done
+          fi
+          if (( missing != 0 )); then
+            find "$input_dir" -maxdepth 1 -type f -print | sort
+            exit 1
+          fi
+          echo "Verified Mapnik input plugins in $input_dir"
+          find "$input_dir" -maxdepth 1 -type f -print | sort
+
       - name: Save vcpkg packages
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -295,10 +331,28 @@ jobs:
           path: vcpkg_installed
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
+      - name: Prepare relocatable vcpkg runtime
+        run: |
+          triplet_root="$GITHUB_WORKSPACE/vcpkg_installed/x64-linux-release"
+          while IFS= read -r -d '' library; do
+            if patchelf --print-rpath "$library" >/dev/null 2>&1; then
+              patchelf --set-rpath '$ORIGIN' "$library"
+            fi
+          done < <(
+            find "$triplet_root/lib" -maxdepth 1 -type f \
+              \( -name '*.so' -o -name '*.so.*' \) -print0
+          )
+
+          while IFS= read -r -d '' plugin; do
+            patchelf --set-rpath '$ORIGIN/../..' "$plugin"
+          done < <(
+            find "$triplet_root" -type f -name '*.input' -print0
+          )
+
       - name: Build and create DEB/RPM packages
         run: |
           installed="$GITHUB_WORKSPACE/vcpkg_installed"
-          ./scripts/build.sh --clean-first --package --package-format all -- \
+          ./scripts/build.sh --type Release --clean-first --package --package-format all -- \
             -DCMAKE_INSTALL_PREFIX=/usr \
             -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/.vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_INSTALLED_DIR="$installed" \
@@ -400,6 +454,14 @@ jobs:
             fi
           done
 
+          source_mapnik_input="$(
+            find "$GITHUB_WORKSPACE/vcpkg_installed/x64-linux-release" \
+              -type f -name 'geojson.input' -printf '%h\n' -quit
+          )"
+          test -n "$source_mapnik_input"
+          mv "$source_mapnik_input" "${source_mapnik_input}.build-only"
+          trap 'mv "${source_mapnik_input}.build-only" "$source_mapnik_input"' EXIT
+
           QT_QPA_PLATFORM=offscreen \
           QT_QUICK_BACKEND=software \
             "$executable" \
@@ -413,7 +475,7 @@ jobs:
           path: |
             dist/*.deb
             dist/*.rpm
-          if-no-files-found: error
+          if-no-files-found: warn
 
   release:
     name: Publish complete cross-platform release

@@ -127,12 +127,11 @@ if(NOT MAPNIK_INPUT_PLUGIN_DIR)
     )
 endif()
 
-if((NOT TARGET mapnik::mapnik
-    AND (NOT MAPNIK_INCLUDE_DIR OR NOT MAPNIK_LIBRARY))
-   OR NOT MAPNIK_INPUT_PLUGIN_DIR)
+if(NOT TARGET mapnik::mapnik
+   AND (NOT MAPNIK_INCLUDE_DIR OR NOT MAPNIK_LIBRARY))
     message(FATAL_ERROR
-        "Mapnik headers, library, or input plugins were not found. "
-        "Set MAPNIK_INCLUDE_DIR, MAPNIK_LIBRARY and MAPNIK_INPUT_PLUGIN_DIR.")
+        "Mapnik headers or library were not found. "
+        "Set MAPNIK_INCLUDE_DIR and MAPNIK_LIBRARY.")
 endif()
 if(NOT ICU_INCLUDE_DIR OR NOT ICU_UC_LIBRARY OR NOT ICU_I18N_LIBRARY)
     message(FATAL_ERROR "ICU uc and i18n development libraries were not found.")
@@ -287,12 +286,22 @@ elseif(WIN32)
     target_sources(GeoReader PRIVATE resources/icons/georeader.rc)
 endif()
 
+if(APPLE)
+    set(GEOREADER_MAPNIK_RUNTIME_INPUT_DIR "../PlugIns/mapnik/input")
+elseif(WIN32)
+    set(GEOREADER_MAPNIK_RUNTIME_INPUT_DIR "mapnik/input")
+else()
+    set(GEOREADER_MAPNIK_RUNTIME_INPUT_DIR
+        "../${CMAKE_INSTALL_LIBDIR}/georeader/mapnik/input")
+endif()
+
 target_include_directories(GeoReader SYSTEM PRIVATE "${ICU_INCLUDE_DIR}")
 if(MAPNIK_INCLUDE_DIR)
     target_include_directories(GeoReader SYSTEM PRIVATE "${MAPNIK_INCLUDE_DIR}")
 endif()
 target_compile_definitions(GeoReader PRIVATE
     GEOREADER_MAPNIK_INPUT_DIR="${MAPNIK_INPUT_PLUGIN_DIR}"
+    GEOREADER_MAPNIK_RUNTIME_INPUT_DIR="${GEOREADER_MAPNIK_RUNTIME_INPUT_DIR}"
     GEOREADER_VERSION="${PROJECT_VERSION}"
     QT_NO_CAST_FROM_ASCII
 )

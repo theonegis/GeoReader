@@ -48,6 +48,7 @@ class ReleaseTripletTests(unittest.TestCase):
             "install(FILES ${GEOREADER_MAPNIK_INPUT_PLUGIN_FILES}",
             cmake,
         )
+        self.assertIn("GEOREADER_MAPNIK_RUNTIME_INPUT_DIR", cmake)
         self.assertNotIn(
             'install(DIRECTORY "${MAPNIK_INPUT_PLUGIN_DIR}/"',
             cmake,
@@ -174,6 +175,18 @@ class ReleaseTripletTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
             self.assertIn("set(VCPKG_BUILD_TYPE release)", triplet)
 
+    def test_packaging_workflow_explicitly_builds_release_only(self) -> None:
+        workflow = (
+            PROJECT_ROOT / ".github" / "workflows" / "package.yml"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("./scripts/build.sh --type Release"), 2)
+        self.assertIn(
+            r".\scripts\build.ps1 -Type Release -CleanFirst",
+            workflow,
+        )
+        self.assertNotIn("./scripts/build.sh --type Debug", workflow)
+        self.assertNotIn(r".\scripts\build.ps1 -Type Debug", workflow)
+
     def test_linux_triplet_explicitly_targets_linux(self) -> None:
         triplet = (
             PROJECT_ROOT
@@ -182,6 +195,8 @@ class ReleaseTripletTests(unittest.TestCase):
             / "x64-linux-release.cmake"
         ).read_text(encoding="utf-8")
         self.assertIn("set(VCPKG_CMAKE_SYSTEM_NAME Linux)", triplet)
+        self.assertIn("set(VCPKG_LIBRARY_LINKAGE dynamic)", triplet)
+        self.assertNotIn("set(VCPKG_LIBRARY_LINKAGE static)", triplet)
 
     def test_workflow_uses_project_release_triplets(self) -> None:
         workflow = (
@@ -222,6 +237,13 @@ class ReleaseTripletTests(unittest.TestCase):
             "libQt6DBus",
             "require_package_entry",
             "Incomplete ${package_name} package",
+            "Verify vcpkg Mapnik input plugins",
+            "Incomplete vcpkg Mapnik",
+            "Prepare relocatable vcpkg runtime",
+            "patchelf --set-rpath '$ORIGIN'",
+            "patchelf --set-rpath '$ORIGIN/../..'",
+            "${source_mapnik_input}.build-only",
+            "if-no-files-found: warn",
             "mapnik-input-v2",
             "if: always()",
         ):

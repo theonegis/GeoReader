@@ -60,6 +60,8 @@ void registerMapnikInputPlugins()
     const QDir executableDirectory(QCoreApplication::applicationDirPath());
     const QStringList candidates {
         executableDirectory.filePath(
+            QString::fromUtf8(GEOREADER_MAPNIK_RUNTIME_INPUT_DIR)),
+        executableDirectory.filePath(
             QStringLiteral("../PlugIns/mapnik/input")),
         executableDirectory.filePath(QStringLiteral("mapnik/input")),
         executableDirectory.filePath(
