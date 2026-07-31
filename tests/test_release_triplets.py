@@ -205,8 +205,29 @@ class ReleaseTripletTests(unittest.TestCase):
         for platform in ("linux", "windows"):
             self.assertIn(f"x64-{platform}-release", workflow)
         self.assertIn("VCPKG_OVERLAY_TRIPLETS", workflow)
-        self.assertIn("actions/cache/restore@v4", workflow)
-        self.assertIn("actions/cache/save@v4", workflow)
+        self.assertIn("actions/cache/restore@v5", workflow)
+        self.assertIn("actions/cache/save@v5", workflow)
+
+    def test_workflow_actions_use_node24_compatible_versions(self) -> None:
+        workflow = (
+            PROJECT_ROOT / ".github" / "workflows" / "package.yml"
+        ).read_text(encoding="utf-8")
+        for deprecated_action in (
+            "actions/cache/restore@v4",
+            "actions/cache/save@v4",
+            "actions/upload-artifact@v4",
+            "actions/download-artifact@v4",
+            "ilammy/msvc-dev-cmd@",
+        ):
+            self.assertNotIn(deprecated_action, workflow)
+        for node24_action in (
+            "actions/cache/restore@v5",
+            "actions/cache/save@v5",
+            "actions/upload-artifact@v6",
+            "actions/download-artifact@v7",
+            "TheMrMilchmann/setup-msvc-dev@v4",
+        ):
+            self.assertIn(node24_action, workflow)
 
     def test_release_commands_explicitly_target_the_repository(self) -> None:
         workflow = (
@@ -224,7 +245,7 @@ class ReleaseTripletTests(unittest.TestCase):
         workflow = (
             PROJECT_ROOT / ".github" / "workflows" / "package.yml"
         ).read_text(encoding="utf-8")
-        self.assertIn("ilammy/msvc-dev-cmd@", workflow)
+        self.assertIn("TheMrMilchmann/setup-msvc-dev@v4", workflow)
         self.assertIn("-DCMAKE_CXX_COMPILER=cl.exe", workflow)
         self.assertIn("-DPKG_CONFIG_EXECUTABLE=$($pkgConfig.FullName)", workflow)
         self.assertIn("PKG_CONFIG_PATH", workflow)

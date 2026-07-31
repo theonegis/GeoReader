@@ -103,7 +103,7 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES=${{ matrix.architecture }}
 
       - name: Upload DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: GeoReader-macOS-${{ matrix.architecture }}
           path: dist/*.dmg
@@ -131,7 +131,7 @@ jobs:
           cache: true
 
       - name: Enable Visual Studio 2022 x64 environment
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756
+        uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
           arch: x64
 
@@ -144,7 +144,7 @@ jobs:
 
       - name: Restore vcpkg packages
         id: vcpkg-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: vcpkg_installed
           key: >-
@@ -177,7 +177,7 @@ jobs:
 
       - name: Save vcpkg packages
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: vcpkg_installed
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
@@ -222,7 +222,7 @@ jobs:
             )
 
       - name: Upload Windows installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: GeoReader-Windows-x64
           path: dist/*.exe
@@ -279,7 +279,7 @@ jobs:
 
       - name: Restore vcpkg packages
         id: vcpkg-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: vcpkg_installed
           key: >-
@@ -345,7 +345,7 @@ jobs:
 
       - name: Save vcpkg packages
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: vcpkg_installed
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
@@ -488,7 +488,7 @@ jobs:
 
       - name: Upload Linux packages
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: GeoReader-Linux-x64
           path: |
@@ -521,7 +521,7 @@ jobs:
         if: >-
           github.event_name == 'workflow_dispatch' &&
           inputs.reuse_run_id != ''
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: ${{ github.repository }}
@@ -534,7 +534,7 @@ jobs:
         if: >-
           github.event_name != 'workflow_dispatch' ||
           inputs.build_target != 'release-only'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           pattern: GeoReader-*
           path: dist
