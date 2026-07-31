@@ -69,7 +69,17 @@ find_library(ICU_I18N_LIBRARY NAMES icui18n icuin
 
 find_package(mapnik CONFIG QUIET)
 if(TARGET mapnik::mapnik)
-    set(GEOREADER_MAPNIK_LINK_TARGET mapnik::mapnik)
+    # Mapnik 4.x exports its GeoJSON and WKT implementations as separate
+    # targets. Static vcpkg builds do not pull these archives in through
+    # mapnik::mapnik, so consumers must link every exported implementation
+    # target explicitly. Keep the auxiliary targets conditional for packaged
+    # Mapnik builds that still expose only the core target.
+    set(GEOREADER_MAPNIK_LINK_TARGETS mapnik::mapnik)
+    foreach(_mapnik_target IN ITEMS mapnik::json mapnik::wkt)
+        if(TARGET "${_mapnik_target}")
+            list(APPEND GEOREADER_MAPNIK_LINK_TARGETS "${_mapnik_target}")
+        endif()
+    endforeach()
     # Homebrew Mapnik 4.2/4.3 的辅助函数在 CMAKE_BUILD_TYPE 为空时会向
     # list(FIND) 传入缺失参数。多配置生成器也可能没有该变量，因此这种
     # 情况直接使用下方跨平台 find_path，避免配置阶段提前失败。
@@ -94,7 +104,7 @@ else()
             /usr/lib
         PATH_SUFFIXES lib
     )
-    set(GEOREADER_MAPNIK_LINK_TARGET "${MAPNIK_LIBRARY}")
+    set(GEOREADER_MAPNIK_LINK_TARGETS "${MAPNIK_LIBRARY}")
 endif()
 
 if(NOT MAPNIK_INPUT_PLUGIN_DIR)
@@ -224,7 +234,7 @@ target_link_libraries(GeoReader PRIVATE
     GDAL::GDAL
     "${ICU_UC_LIBRARY}"
     "${ICU_I18N_LIBRARY}"
-    ${GEOREADER_MAPNIK_LINK_TARGET}
+    ${GEOREADER_MAPNIK_LINK_TARGETS}
 )
 
 if(APPLE)
@@ -315,10 +325,29 @@ else()
 endif()
 
 if(NOT APPLE)
+    set(_georeader_qt_deploy_options)
+    if(UNIX)
+        # Desktop integration plugins may be installed beside Qt's own
+        # plugins without being part of the Qt SDK. Arch's Fcitx5, qt6ct and
+        # Kvantum plugins have no writable RPATH entry, so Qt's deploy script
+        # cannot relocate them while generating DEB/RPM packages. Keep Qt's
+        # Compose and IBus input plugins and all required QPA/Wayland plugins,
+        # while leaving optional desktop themes and styles to the target
+        # distribution's system packages.
+        list(APPEND _georeader_qt_deploy_options
+            INCLUDE_PLUGINS
+                qoffscreen
+                qwayland
+                qwayland-egl
+                qwayland-generic
+            EXCLUDE_PLUGINS libfcitx5platforminputcontextplugin
+            EXCLUDE_PLUGIN_TYPES platformthemes styles)
+    endif()
     qt_generate_deploy_qml_app_script(
         TARGET GeoReader
         OUTPUT_SCRIPT GEOREADER_QT_DEPLOY_SCRIPT
         NO_UNSUPPORTED_PLATFORM_ERROR
+        ${_georeader_qt_deploy_options}
     )
     install(SCRIPT "${GEOREADER_QT_DEPLOY_SCRIPT}")
 endif()

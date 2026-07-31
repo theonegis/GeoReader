@@ -478,8 +478,10 @@ DEB/RPM 打包需要额外打开运行库收集并安装对应的打包工具：
 
 CI 的 Linux 二进制在 Ubuntu 24.04 x64 上构建；DEB 和 RPM 包含 Qt、
 Wayland/XCB QPA 插件、vcpkg 动态库、Mapnik 输入插件以及 GDAL/PROJ
-数据目录，但仍要求目标
-系统具有兼容的 glibc 和图形栈。
+数据目录。安装包同时提供 Qt 的 Compose 和 IBus 输入法插件。Fcitx5
+用户应安装发行版中与目标 Qt ABI 匹配的 Fcitx5 Qt 插件，或启用 Fcitx5
+的 IBus 前端；构建机上的第三方 Fcitx5 插件不会被复制进安装包。目标
+系统仍需具有兼容的 glibc 和图形栈。
 
 ### Linux 图形后端选择
 

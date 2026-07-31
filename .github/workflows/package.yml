@@ -306,12 +306,40 @@ jobs:
             -DGEOREADER_BUNDLE_VCPKG_RUNTIME=ON \
             -DGEOREADER_VCPKG_RUNTIME_ROOT="$installed/x64-linux-release"
 
-      - name: Verify Wayland QPA plugin is packaged
+      - name: Verify Linux packages and packaged runtime
         run: |
           deb_package="$(find dist -maxdepth 1 -name '*.deb' -print -quit)"
+          rpm_package="$(find dist -maxdepth 1 -name '*.rpm' -print -quit)"
           test -n "$deb_package"
-          dpkg-deb -c "$deb_package" \
-            | grep -E 'platforms/libqwayland-(egl|generic)\.so'
+          test -n "$rpm_package"
+
+          deb_contents="$(dpkg-deb -c "$deb_package")"
+          rpm_contents="$(rpm -qpl "$rpm_package")"
+          for contents in "$deb_contents" "$rpm_contents"; do
+            grep -Eq 'mapnik/input/geojson\.input' <<<"$contents"
+            grep -Eq 'mapnik/input/(gdal\+ogr|gdal|ogr)\.input' <<<"$contents"
+            grep -Eq 'mapnik/input/raster\.input' <<<"$contents"
+            grep -Eq 'mapnik/input/shape\.input' <<<"$contents"
+            grep -Eq 'platforms/libqoffscreen\.so' <<<"$contents"
+            grep -Eq 'platforms/libqwayland(-egl|-generic)?\.so' <<<"$contents"
+            grep -Eq 'platforminputcontexts/libcomposeplatforminputcontextplugin\.so' <<<"$contents"
+            grep -Eq 'platforminputcontexts/libibusplatforminputcontextplugin\.so' <<<"$contents"
+          done
+
+          deb_root="$(mktemp -d "$RUNNER_TEMP/georeader-deb.XXXXXX")"
+          dpkg-deb -x "$deb_package" "$deb_root"
+          executable="$deb_root/usr/bin/GeoReader"
+          test -x "$executable"
+
+          if ldd "$executable" | grep -F 'not found'; then
+            echo "The packaged GeoReader executable has missing libraries." >&2
+            exit 1
+          fi
+
+          QT_QPA_PLATFORM=offscreen \
+          QT_QUICK_BACKEND=software \
+            "$executable" \
+            --smoke-test "$GITHUB_WORKSPACE/tests/data/demo.geojson"
 
       - name: Upload Linux packages
         uses: actions/upload-artifact@v4
