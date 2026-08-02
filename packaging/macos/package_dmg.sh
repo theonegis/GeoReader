@@ -45,6 +45,14 @@ fi
     "-qmldir=$project_root/qml" \
     "-always-overwrite"
 
+# macdeployqt 会从完整 Qt SDK 中带入未被 GeoReader 使用的数据库驱动。
+# 这些插件依赖 Runner 上不存在的 ODBC、PostgreSQL 或 Mimer 客户端；项目
+# 没有链接 Qt6::Sql，因此从临时 APP 中移除它们既安全也能缩小安装包。
+unused_sql_plugins="$app_path/Contents/PlugIns/sqldrivers"
+if [[ -d "$unused_sql_plugins" ]]; then
+    rm -rf -- "$unused_sql_plugins"
+fi
+
 # Homebrew's split Qt formula can leave native plug-in directories out of
 # macdeployqt's initial scan. Copy the runtime categories GeoReader needs,
 # dereferencing Homebrew symlinks, then let macdeployqt rewrite their Qt paths.
@@ -267,6 +275,32 @@ version_exceeds_macos_12()
     }'
 }
 
+list_macho_load_dependencies()
+{
+    local binary="$1"
+
+    # otool -L 同时显示 LC_ID_DYLIB（动态库自己的安装名）和真正的加载项，
+    # 不能用于依赖审计。这里只读取 dyld 实际会加载的命令，避免把插件自身
+    # 位于 APP 内的安装名误报为外部依赖。
+    otool -l "$binary" | awk '
+        $1 == "cmd" {
+            is_load = ($2 == "LC_LOAD_DYLIB" ||
+                       $2 == "LC_LOAD_WEAK_DYLIB" ||
+                       $2 == "LC_REEXPORT_DYLIB" ||
+                       $2 == "LC_LOAD_UPWARD_DYLIB" ||
+                       $2 == "LC_LAZY_LOAD_DYLIB")
+            next
+        }
+        is_load && $1 == "name" {
+            dependency = $0
+            sub(/^[[:space:]]*name[[:space:]]+/, "", dependency)
+            sub(/[[:space:]]+\(offset[[:space:]][0-9]+\)$/, "", dependency)
+            print dependency
+            is_load = 0
+        }
+    '
+}
+
 plist_minimum="$(
     /usr/libexec/PlistBuddy \
         -c 'Print :LSMinimumSystemVersion' \
@@ -279,6 +313,7 @@ fi
 
 # 验证整个 APP，而不只验证主程序。任意 Qt、GDAL、Mapnik 或 ICU 二进制
 # 若要求 macOS 12 之后的系统，DMG 都不能标记为支持 Monterey。
+audit_errors=()
 while IFS= read -r -d '' binary; do
     file "$binary" | grep -q 'Mach-O' || continue
 
@@ -286,29 +321,44 @@ while IFS= read -r -d '' binary; do
         xcrun vtool -show-build "$binary" 2>/dev/null \
             | awk '$1 == "minos" { print $2 }' \
             | sort -u
-    )"
+    )" || minimum_versions=""
     if [[ -z "$minimum_versions" ]]; then
-        echo "Cannot determine the deployment target: $binary" >&2
-        exit 1
+        audit_errors+=("Cannot determine the deployment target: $binary")
+        continue
     fi
     while IFS= read -r minimum_version; do
         if version_exceeds_macos_12 "$minimum_version"; then
-            echo "$binary requires macOS $minimum_version (maximum is 12.0)" >&2
-            exit 1
+            audit_errors+=(
+                "$binary requires macOS $minimum_version (maximum is 12.0)"
+            )
         fi
     done <<< "$minimum_versions"
 
-    while IFS= read -r dependency; do
-        case "$dependency" in
-            @*|/System/*|/usr/lib/*)
-                ;;
-            *)
-                echo "Unbundled macOS dependency in $binary: $dependency" >&2
-                exit 1
-                ;;
-        esac
-    done < <(otool -L "$binary" | awk 'NR > 1 { print $1 }')
+    if ! load_dependencies="$(
+        list_macho_load_dependencies "$binary" 2>/dev/null
+    )"; then
+        audit_errors+=("Cannot inspect Mach-O dependencies: $binary")
+        continue
+    fi
+    if [[ -n "$load_dependencies" ]]; then
+        while IFS= read -r dependency; do
+            case "$dependency" in
+                @*|/System/*|/usr/lib/*)
+                    ;;
+                *)
+                    audit_errors+=(
+                        "Unbundled macOS dependency in $binary: $dependency"
+                    )
+                    ;;
+            esac
+        done <<< "$load_dependencies"
+    fi
 done < <(find "$app_path" -type f -print0)
+
+if (( ${#audit_errors[@]} > 0 )); then
+    printf '%s\n' "${audit_errors[@]}" >&2
+    exit 1
+fi
 
 main_minimum_versions="$(
     xcrun vtool -show-build "$executable" \

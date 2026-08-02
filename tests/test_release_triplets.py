@@ -228,12 +228,21 @@ class ReleaseTripletTests(unittest.TestCase):
         self.assertIn("${CMAKE_OSX_DEPLOYMENT_TARGET}", plist)
         for expected in (
             "version_exceeds_macos_12",
+            "list_macho_load_dependencies",
+            'Contents/PlugIns/sqldrivers',
+            'rm -rf -- "$unused_sql_plugins"',
+            'LC_LOAD_DYLIB',
+            'LC_LOAD_WEAK_DYLIB',
+            'LC_REEXPORT_DYLIB',
+            "audit_errors=()",
+            "Cannot inspect Mach-O dependencies",
             "xcrun vtool -show-build",
             "Unexpected LSMinimumSystemVersion",
             "Unbundled macOS dependency",
             "Verified macOS 12 compatibility",
         ):
             self.assertIn(expected, package_script)
+        self.assertNotIn('$2 == "LC_ID_DYLIB"', package_script)
 
     def test_packaging_workflow_explicitly_builds_release_only(self) -> None:
         workflow = (

@@ -367,7 +367,8 @@ Actions DMG 使用 Qt 6.8 官方包，并通过仓库固定的 vcpkg baseline、
 打包脚本会在创建 DMG 前检查 `Info.plist` 的
 `LSMinimumSystemVersion=12.0`，并扫描 APP 中所有 Mach-O 文件：任何二进制
 要求高于 macOS 12，或仍链接 Runner/Homebrew 的未打包绝对路径，都会立即
-终止构建。
+终止构建。脚本会移除 GeoReader 未使用的 Qt SQL 驱动，并只审计真正的
+`LC_LOAD_*` 加载命令，不会把动态库自身的 `LC_ID_DYLIB` 安装名误判成依赖。
 
 ## 在 CachyOS / Arch Linux 上编译
 
