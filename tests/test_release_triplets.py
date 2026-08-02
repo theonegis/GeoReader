@@ -175,6 +175,66 @@ class ReleaseTripletTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
             self.assertIn("set(VCPKG_BUILD_TYPE release)", triplet)
 
+    def test_macos_triplets_target_monterey(self) -> None:
+        for architecture in ("x64", "arm64"):
+            triplet = (
+                PROJECT_ROOT
+                / "cmake"
+                / "triplets"
+                / f"{architecture}-osx-release.cmake"
+            ).read_text(encoding="utf-8")
+            self.assertIn(
+                "set(VCPKG_OSX_DEPLOYMENT_TARGET 12.0)", triplet
+            )
+            self.assertIn("-mmacosx-version-min=12.0", triplet)
+            self.assertIn("set(VCPKG_BUILD_TYPE release)", triplet)
+
+    def test_macos_workflow_builds_pinned_dependencies_for_monterey(
+        self,
+    ) -> None:
+        workflow = (
+            PROJECT_ROOT / ".github" / "workflows" / "package.yml"
+        ).read_text(encoding="utf-8")
+        macos_job = workflow.split("  macos:", 1)[1].split(
+            "  windows:", 1
+        )[0]
+
+        self.assertIn("version: ${{ env.QT_VERSION }}", macos_job)
+        self.assertIn("arch: clang_64", macos_job)
+        self.assertIn("Check out pinned vcpkg", macos_job)
+        self.assertIn("vcpkg-macos-12-${{ matrix.architecture }}", macos_job)
+        self.assertIn("--triplet=${{ matrix.triplet }}", macos_job)
+        self.assertIn("-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0", macos_job)
+        self.assertIn("-DGEOREADER_BUNDLE_VCPKG_RUNTIME=ON", macos_job)
+        brew_step = macos_job.split("- name: Install build tools", 1)[1].split(
+            "- name: Install Qt 6.8 LTS", 1
+        )[0]
+        for dependency in ("qt", "gdal", "mapnik"):
+            self.assertNotIn(dependency, brew_step.lower())
+
+    def test_macos_bundle_declares_and_validates_monterey(self) -> None:
+        cmake = (PROJECT_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+        plist = (
+            PROJECT_ROOT / "packaging" / "macos" / "Info.plist.in"
+        ).read_text(encoding="utf-8")
+        package_script = (
+            PROJECT_ROOT / "packaging" / "macos" / "package_dmg.sh"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('CMAKE_OSX_DEPLOYMENT_TARGET "12.0"', cmake)
+        self.assertIn("MACOSX_BUNDLE_INFO_PLIST", cmake)
+        self.assertIn("GeoReader.app/Contents/Resources", cmake)
+        self.assertIn("LSMinimumSystemVersion", plist)
+        self.assertIn("${CMAKE_OSX_DEPLOYMENT_TARGET}", plist)
+        for expected in (
+            "version_exceeds_macos_12",
+            "xcrun vtool -show-build",
+            "Unexpected LSMinimumSystemVersion",
+            "Unbundled macOS dependency",
+            "Verified macOS 12 compatibility",
+        ):
+            self.assertIn(expected, package_script)
+
     def test_packaging_workflow_explicitly_builds_release_only(self) -> None:
         workflow = (
             PROJECT_ROOT / ".github" / "workflows" / "package.yml"

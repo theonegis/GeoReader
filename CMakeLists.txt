@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.25)
 
+if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    # Qt 6.8 官方支持 macOS 12；将工程默认值与发布 triplet 保持一致。
+    # 用户仍可在首次配置时显式传入其他 target 用于本地兼容性测试。
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING
+        "Minimum macOS version supported by GeoReader")
+endif()
+
 project(GeoReader VERSION 1.0.1 LANGUAGES CXX)
 
 if(POLICY CMP0167)
@@ -325,8 +332,11 @@ if(APPLE)
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME "GeoReader"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.georeader.desktop"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         MACOSX_BUNDLE_ICON_FILE "georeader.icns"
+        MACOSX_BUNDLE_INFO_PLIST
+            "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/Info.plist.in"
     )
 elseif(UNIX)
     set_target_properties(GeoReader PROPERTIES
@@ -376,9 +386,16 @@ if(GEOREADER_BUNDLE_VCPKG_RUNTIME)
     foreach(_data_directory IN ITEMS gdal proj)
         if(EXISTS
            "${GEOREADER_VCPKG_RUNTIME_ROOT}/share/${_data_directory}")
+            if(APPLE)
+                set(_georeader_data_destination
+                    "GeoReader.app/Contents/Resources")
+            else()
+                set(_georeader_data_destination
+                    "${CMAKE_INSTALL_DATADIR}/georeader")
+            endif()
             install(DIRECTORY
                 "${GEOREADER_VCPKG_RUNTIME_ROOT}/share/${_data_directory}"
-                DESTINATION "${CMAKE_INSTALL_DATADIR}/georeader")
+                DESTINATION "${_georeader_data_destination}")
         endif()
     endforeach()
 endif()

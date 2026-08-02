@@ -61,6 +61,7 @@ GeoReader 是一款以 **Qt 6 + Mapnik + GDAL/OGR** 构建的现代桌面空间�
   快捷键持久化
 - 工具栏采用 Heroicons 24 px outline 图标；APP Icon 使用蓝紫渐变的
   小圆角三图层设计，并提供 macOS `.icns`、Windows `.ico` 和 Linux SVG
+- macOS Intel 与 Apple Silicon 安装包最低支持 macOS Monterey 12
 - 跨平台默认 Style：
   - macOS：`FluentWinUI3`
   - Windows：`FluentWinUI3`
@@ -350,9 +351,23 @@ brew install dylibbundler
 ./scripts/build.sh --clean-first --package
 ```
 
-输出为 `dist/GeoReader-macOS-arm64.dmg` 或
-`dist/GeoReader-macOS-x86_64.dmg`。当前自动包使用 ad-hoc 签名，
+本机依赖也满足 macOS 12 最低版本时，输出为
+`dist/GeoReader-macOS-arm64.dmg` 或 `dist/GeoReader-macOS-x86_64.dmg`；
+否则兼容性审计会拒绝生成一个错误标注为支持 Monterey 的 DMG。需要正式的
+macOS 12 安装包时应使用下述 GitHub Actions。当前自动包使用 ad-hoc 签名，
 尚未使用 Apple Developer ID 签名和公证。
+
+工程在 macOS 上默认设置 `CMAKE_OSX_DEPLOYMENT_TARGET=12.0`。普通本地构建
+仍会链接本机 Homebrew 依赖，适合开发和测试；Homebrew bottle 的最低系统
+版本可能随时间变化，因此不能仅凭本地构建声明兼容 Monterey。正式 GitHub
+Actions DMG 使用 Qt 6.8 官方包，并通过仓库固定的 vcpkg baseline、Mapnik
+4.3 overlay 和 `x64/arm64-osx-release` triplet，将 GDAL、Mapnik、ICU 及其
+依赖按 macOS 12 重新编译。
+
+打包脚本会在创建 DMG 前检查 `Info.plist` 的
+`LSMinimumSystemVersion=12.0`，并扫描 APP 中所有 Mach-O 文件：任何二进制
+要求高于 macOS 12，或仍链接 Runner/Homebrew 的未打包绝对路径，都会立即
+终止构建。
 
 ## 在 CachyOS / Arch Linux 上编译
 
@@ -501,8 +516,8 @@ QT_QPA_PLATFORM=xcb ./build/GeoReader      # 强制 X11/XWayland
 
 | 安装包 | GitHub runner | 产物 |
 | --- | --- | --- |
-| macOS Intel | `macos-15-intel` | `GeoReader-macOS-x86_64.dmg` |
-| macOS Apple Silicon | `macos-15` | `GeoReader-macOS-arm64.dmg` |
+| macOS Intel（最低 12） | `macos-15-intel` | `GeoReader-macOS-x86_64.dmg` |
+| macOS Apple Silicon（最低 12） | `macos-15` | `GeoReader-macOS-arm64.dmg` |
 | Windows x64 | `windows-2025` | NSIS `.exe` |
 | Linux x64 | `ubuntu-24.04` | `.deb` 和 `.rpm` |
 
@@ -511,10 +526,11 @@ QT_QPA_PLATFORM=xcb ./build/GeoReader      # 强制 X11/XWayland
 GitHub Release。手动运行可以通过 `build_target` 只选择 macOS、
 Windows、Linux 或 Windows + Linux，避免重复构建已经成功的平台。
 
-Windows/Linux 使用 Qt 6.8 LTS 和 vcpkg；项目根据固定 SHA-512 创建
+所有平台使用 Qt 6.8 LTS；Windows、Linux 和 macOS 发布包的 GDAL/Mapnik
+均通过固定 vcpkg baseline 构建。项目根据固定 SHA-512 创建
 Mapnik 4.3.0 overlay port，因为 vcpkg 当前内置 Mapnik port 仍是
-4.0.7。macOS 使用 runner 当前架构的 Homebrew Qt、GDAL 和 Mapnik
-（要求 Qt 6.8+）。
+4.0.7。macOS 使用独立的 Intel/ARM64 Release triplet，并把所有依赖的
+deployment target 固定为 12.0。
 
 CI 使用仓库内的 Release-only vcpkg triplet，避免为 GDAL、Mapnik
 及其依赖重复编译不会进入安装包的 Debug 版本。依赖安装与应用构建

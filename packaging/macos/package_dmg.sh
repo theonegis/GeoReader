@@ -105,11 +105,26 @@ for relative_plugin in "${qt_runtime_plugins[@]}"; do
     bundle_arguments+=(-x "$plugin")
 done
 
-for formula in mapnik gdal icu4c@78 icu4c; do
-    if formula_prefix="$(brew --prefix "$formula" 2>/dev/null)"; then
-        bundle_arguments+=(-s "$formula_prefix/lib")
+# CI 的发布包使用 vcpkg 为当前架构重新编译 GDAL、Mapnik 和 ICU。
+# 此时只允许从 vcpkg 搜索依赖，避免 dylibbundler 回退到 Runner 上更高
+# deployment target 的 Homebrew bottle；普通本地打包仍使用 Homebrew 路径。
+if [[ -n "${GEOREADER_VCPKG_RUNTIME_ROOT:-}" ]]; then
+    vcpkg_runtime_root="$(
+        cd "$GEOREADER_VCPKG_RUNTIME_ROOT"
+        pwd -P
+    )"
+    if [[ ! -d "$vcpkg_runtime_root/lib" ]]; then
+        echo "vcpkg runtime lib directory is missing: $vcpkg_runtime_root/lib" >&2
+        exit 1
     fi
-done
+    bundle_arguments+=(-s "$vcpkg_runtime_root/lib")
+else
+    for formula in mapnik gdal icu4c@78 icu4c; do
+        if formula_prefix="$(brew --prefix "$formula" 2>/dev/null)"; then
+            bundle_arguments+=(-s "$formula_prefix/lib")
+        fi
+    done
+fi
 
 bundle_log="$output_dir/dylibbundler-${architecture}.log"
 if ! dylibbundler "${bundle_arguments[@]}" >"$bundle_log" 2>&1; then
@@ -240,6 +255,73 @@ for required_runtime_file in "${required_runtime_files[@]}"; do
         exit 1
     fi
 done
+
+version_exceeds_macos_12()
+{
+    local version="$1"
+    awk -v version="$version" 'BEGIN {
+        split(version, parts, ".")
+        major = parts[1] + 0
+        minor = parts[2] + 0
+        exit ! (major > 12 || (major == 12 && minor > 0))
+    }'
+}
+
+plist_minimum="$(
+    /usr/libexec/PlistBuddy \
+        -c 'Print :LSMinimumSystemVersion' \
+        "$app_path/Contents/Info.plist"
+)"
+if [[ "$plist_minimum" != "12.0" ]]; then
+    echo "Unexpected LSMinimumSystemVersion: $plist_minimum" >&2
+    exit 1
+fi
+
+# 验证整个 APP，而不只验证主程序。任意 Qt、GDAL、Mapnik 或 ICU 二进制
+# 若要求 macOS 12 之后的系统，DMG 都不能标记为支持 Monterey。
+while IFS= read -r -d '' binary; do
+    file "$binary" | grep -q 'Mach-O' || continue
+
+    minimum_versions="$(
+        xcrun vtool -show-build "$binary" 2>/dev/null \
+            | awk '$1 == "minos" { print $2 }' \
+            | sort -u
+    )"
+    if [[ -z "$minimum_versions" ]]; then
+        echo "Cannot determine the deployment target: $binary" >&2
+        exit 1
+    fi
+    while IFS= read -r minimum_version; do
+        if version_exceeds_macos_12 "$minimum_version"; then
+            echo "$binary requires macOS $minimum_version (maximum is 12.0)" >&2
+            exit 1
+        fi
+    done <<< "$minimum_versions"
+
+    while IFS= read -r dependency; do
+        case "$dependency" in
+            @*|/System/*|/usr/lib/*)
+                ;;
+            *)
+                echo "Unbundled macOS dependency in $binary: $dependency" >&2
+                exit 1
+                ;;
+        esac
+    done < <(otool -L "$binary" | awk 'NR > 1 { print $1 }')
+done < <(find "$app_path" -type f -print0)
+
+main_minimum_versions="$(
+    xcrun vtool -show-build "$executable" \
+        | awk '$1 == "minos" { print $2 }' \
+        | sort -u
+)"
+if [[ "$main_minimum_versions" != "12.0" ]]; then
+    echo "GeoReader executable does not target exactly macOS 12.0: " \
+        "$main_minimum_versions" >&2
+    exit 1
+fi
+
+echo "Verified macOS 12 compatibility for the complete app bundle"
 
 dmg_path="$output_dir/GeoReader-macOS-${architecture}.dmg"
 local_dmg_path="$work_dir/GeoReader-macOS-${architecture}.dmg"

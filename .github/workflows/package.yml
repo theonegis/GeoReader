@@ -86,21 +86,90 @@ jobs:
           - name: Intel
             runner: macos-15-intel
             architecture: x86_64
+            triplet: x64-osx-release
           - name: Apple-Silicon
             runner: macos-15
             architecture: arm64
+            triplet: arm64-osx-release
 
     steps:
       - name: Check out GeoReader
         uses: actions/checkout@v5
 
-      - name: Install build dependencies
-        run: brew install cmake ninja qt gdal mapnik dylibbundler
+      - name: Install build tools
+        run: |
+          brew install \
+            autoconf autoconf-archive automake bison cmake dylibbundler \
+            flex gnu-sed libtool nasm ninja pkgconf
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix gnu-sed)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Install Qt 6.8 LTS
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: clang_64
+          cache: true
+
+      - name: Check out pinned vcpkg
+        uses: actions/checkout@v5
+        with:
+          repository: microsoft/vcpkg
+          ref: ${{ env.VCPKG_COMMIT }}
+          path: .vcpkg
+
+      - name: Restore macOS vcpkg packages
+        id: macos-vcpkg-cache
+        uses: actions/cache/restore@v5
+        with:
+          path: vcpkg_installed
+          key: >-
+            vcpkg-macos-12-${{ matrix.architecture }}-${{
+            env.VCPKG_COMMIT }}-mapnik-${{ env.MAPNIK_VERSION }}-${{
+            hashFiles('vcpkg.json', 'scripts/prepare_vcpkg_overlay.py',
+            'cmake/triplets/*-osx-release.cmake') }}
+
+      - name: Bootstrap vcpkg
+        run: ./.vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Prepare Mapnik 4.3 vcpkg overlay
+        run: >-
+          python3 scripts/prepare_vcpkg_overlay.py
+          --vcpkg-root .vcpkg
+          --output .vcpkg-overlays
+
+      - name: Install macOS 12 GDAL and Mapnik dependencies
+        run: |
+          installed="$GITHUB_WORKSPACE/vcpkg_installed"
+          ./.vcpkg/vcpkg install \
+            --triplet=${{ matrix.triplet }} \
+            --x-manifest-root="$GITHUB_WORKSPACE" \
+            --x-install-root="$installed" \
+            --overlay-ports="$GITHUB_WORKSPACE/.vcpkg-overlays" \
+            --overlay-triplets="$GITHUB_WORKSPACE/cmake/triplets"
+
+      - name: Save macOS vcpkg packages
+        if: steps.macos-vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: vcpkg_installed
+          key: ${{ steps.macos-vcpkg-cache.outputs.cache-primary-key }}
 
       - name: Build and create DMG
         run: |
+          installed="$GITHUB_WORKSPACE/vcpkg_installed"
+          export GEOREADER_VCPKG_RUNTIME_ROOT="$installed/${{ matrix.triplet }}"
           ./scripts/build.sh --type Release --clean-first --package --package-format dmg -- \
-            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.architecture }}
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.architecture }} \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/.vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_INSTALLED_DIR="$installed" \
+            -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
+            -DVCPKG_OVERLAY_PORTS="$GITHUB_WORKSPACE/.vcpkg-overlays" \
+            -DVCPKG_OVERLAY_TRIPLETS="$GITHUB_WORKSPACE/cmake/triplets" \
+            -DGEOREADER_BUNDLE_VCPKG_RUNTIME=ON \
+            -DGEOREADER_VCPKG_RUNTIME_ROOT="$installed/${{ matrix.triplet }}"
 
       - name: Upload DMG
         uses: actions/upload-artifact@v6
