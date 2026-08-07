@@ -502,13 +502,20 @@ void AppController::loadDataset(const QString &path)
         return;
     }
 
+    // 一次“打开数据”对应一个稳定的数据源 ID。GeoPackage 等多图层文件
+    // 的所有子图层共享该 ID，图层面板因此可以整组显隐和一次性移除。
+    const QString datasetId =
+        QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString datasetName = QFileInfo(path).completeBaseName();
     if (hasVector)
-        addVectorLayers(path);
+        addVectorLayers(path, datasetId, datasetName);
     if (hasRaster)
-        addRasterLayer(path);
+        addRasterLayer(path, datasetId, datasetName);
 }
 
-void AppController::addVectorLayers(const QString &path)
+void AppController::addVectorLayers(const QString &path,
+                                    const QString &datasetId,
+                                    const QString &datasetName)
 {
     GdalDatasetPtr dataset(
         static_cast<GDALDataset *>(GDALOpenEx(path.toUtf8().constData(),
@@ -528,11 +535,12 @@ void AppController::addVectorLayers(const QString &path)
             continue;
 
         LayerSnapshot layer;
+        layer.datasetId = datasetId;
+        layer.datasetName = datasetName;
         layer.path = path;
         layer.sourceLayer = QString::fromUtf8(ogrLayer->GetName());
         layer.name = dataset->GetLayerCount() > 1
-            ? QStringLiteral("%1 · %2").arg(QFileInfo(path).completeBaseName(), layer.sourceLayer)
-            : QFileInfo(path).completeBaseName();
+            ? layer.sourceLayer : datasetName;
         layer.type = QStringLiteral("vector");
         layer.geometryType = vectorGeometryType(ogrLayer);
         layer.srs = srsProjString(ogrLayer->GetSpatialRef());
@@ -548,7 +556,9 @@ void AppController::addVectorLayers(const QString &path)
     setStatus(tr("已加载 %1 个矢量图层").arg(added));
 }
 
-void AppController::addRasterLayer(const QString &path)
+void AppController::addRasterLayer(const QString &path,
+                                   const QString &datasetId,
+                                   const QString &datasetName)
 {
     GdalDatasetPtr dataset(
         static_cast<GDALDataset *>(GDALOpenEx(path.toUtf8().constData(),
@@ -586,8 +596,10 @@ void AppController::addRasterLayer(const QString &path)
 
     LayerSnapshot layer;
     layer.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    layer.datasetId = datasetId;
+    layer.datasetName = datasetName;
     layer.path = path;
-    layer.name = QFileInfo(path).completeBaseName();
+    layer.name = datasetName;
     layer.type = QStringLiteral("raster");
     layer.bandCount = dataset->GetRasterCount();
     layer.redBand = 1;

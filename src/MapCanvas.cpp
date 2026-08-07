@@ -42,6 +42,35 @@ constexpr double kMaxLatitude = 85.05112878;
 constexpr double kEarthRadius = 6378137.0;
 constexpr int kTileSize = 256;
 
+int maximumTileZoom(const QString &baseMap)
+{
+    if (baseMap == QStringLiteral("opentopomap"))
+        return 17;
+    if (baseMap == QStringLiteral("esri_imagery"))
+        return 19;
+    return 19;
+}
+
+QUrl tileUrl(const QString &baseMap, int zoom, int x, int y)
+{
+    if (baseMap == QStringLiteral("esri_imagery")) {
+        return QUrl(QStringLiteral(
+            "https://services.arcgisonline.com/ArcGIS/rest/services/"
+            "World_Imagery/MapServer/tile/%1/%2/%3")
+                        .arg(zoom).arg(y).arg(x));
+    }
+    if (baseMap == QStringLiteral("opentopomap")) {
+        constexpr std::array<char, 3> subdomains {'a', 'b', 'c'};
+        const char subdomain = subdomains.at(
+            static_cast<std::size_t>((x + y) % subdomains.size()));
+        return QUrl(QStringLiteral("https://%1.tile.opentopomap.org/%2/%3/%4.png")
+                        .arg(QChar::fromLatin1(subdomain))
+                        .arg(zoom).arg(x).arg(y));
+    }
+    return QUrl(QStringLiteral("https://tile.openstreetmap.org/%1/%2/%3.png")
+                    .arg(zoom).arg(x).arg(y));
+}
+
 QString xmlEscaped(const QString &value)
 {
     return value.toHtmlEscaped();
@@ -387,7 +416,7 @@ MapCanvas::MapCanvas(QQuickItem *parent)
     auto *diskCache = new QNetworkDiskCache(&m_network);
     diskCache->setCacheDirectory(
         QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
-        + QStringLiteral("/osm"));
+        + QStringLiteral("/basemaps"));
     diskCache->setMaximumCacheSize(256LL * 1024LL * 1024LL);
     m_network.setCache(diskCache);
     connect(&m_network, &QNetworkAccessManager::finished,
@@ -440,6 +469,40 @@ void MapCanvas::setLayerModel(LayerModel *model)
     }
     emit layerModelChanged();
     scheduleOverlayRender();
+}
+
+QString MapCanvas::baseMapAttribution() const
+{
+    if (m_baseMap == QStringLiteral("esri_imagery")) {
+        return tr("Tiles © Esri — Esri, Maxar, Earthstar Geographics, "
+                  "and the GIS User Community");
+    }
+    if (m_baseMap == QStringLiteral("opentopomap")) {
+        return tr("Map data © OpenStreetMap contributors, SRTM · "
+                  "Map style © OpenTopoMap (CC-BY-SA)");
+    }
+    return tr("© OpenStreetMap contributors");
+}
+
+void MapCanvas::setBaseMap(const QString &baseMap)
+{
+    static const QSet<QString> supported {
+        QStringLiteral("osm"),
+        QStringLiteral("esri_imagery"),
+        QStringLiteral("opentopomap")
+    };
+    const QString normalized = supported.contains(baseMap)
+        ? baseMap : QStringLiteral("osm");
+    if (m_baseMap == normalized)
+        return;
+
+    m_baseMap = normalized;
+    {
+        QMutexLocker locker(&m_imageMutex);
+        m_tiles.clear();
+    }
+    emit baseMapChanged();
+    update();
 }
 
 QPointF MapCanvas::lonLatToWorld(double longitude, double latitude, double zoom)
@@ -540,7 +603,9 @@ void MapCanvas::paint(QPainter *painter)
 
 void MapCanvas::drawBaseMap(QPainter *painter)
 {
-    const int tileZoom = std::clamp(static_cast<int>(std::floor(m_zoomLevel)), 0, 19);
+    const int tileZoom = std::clamp(
+        static_cast<int>(std::floor(m_zoomLevel)), 0,
+        maximumTileZoom(m_baseMap));
     const double fractionalScale = std::exp2(m_zoomLevel - tileZoom);
     const QPointF centerAtTileZoom =
         lonLatToWorld(m_centerLongitude, m_centerLatitude, tileZoom);
@@ -561,7 +626,8 @@ void MapCanvas::drawBaseMap(QPainter *painter)
             continue;
         for (int tileX = minTileX; tileX <= maxTileX; ++tileX) {
             const int wrappedX = (tileX % tileCount + tileCount) % tileCount;
-            const QString key = QStringLiteral("%1/%2/%3")
+            const QString key = QStringLiteral("%1/%2/%3/%4")
+                                    .arg(m_baseMap)
                                     .arg(tileZoom).arg(wrappedX).arg(tileY);
             const QRectF target(
                 (tileX * kTileSize - topLeftAtTileZoom.x()) * fractionalScale,
@@ -590,11 +656,11 @@ void MapCanvas::requestTile(int zoom, int x, int y, const QString &key)
     if (m_pendingTiles.contains(key))
         return;
     m_pendingTiles.insert(key);
-    const QUrl url(QStringLiteral("https://tile.openstreetmap.org/%1/%2/%3.png")
-                       .arg(zoom).arg(x).arg(y));
+    const QUrl url = tileUrl(m_baseMap, zoom, x, y);
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::UserAgentHeader,
-                      QStringLiteral("GeoReader/%1 (desktop spatial data viewer)")
+                      QStringLiteral("GeoReader/%1 (+https://github.com/"
+                                     "theonegis/GeoReader)")
                           .arg(QString::fromLatin1(GEOREADER_VERSION)));
     request.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
                          QNetworkRequest::PreferCache);
@@ -648,8 +714,22 @@ void MapCanvas::panBy(double horizontalPixels, double verticalPixels)
 
 void MapCanvas::fitBounds(double minLon, double minLat, double maxLon, double maxLat)
 {
-    if (!(minLon < maxLon) || !(minLat < maxLat) || width() <= 0 || height() <= 0)
+    if (!std::isfinite(minLon) || !std::isfinite(minLat)
+        || !std::isfinite(maxLon) || !std::isfinite(maxLat)
+        || minLon > maxLon || minLat > maxLat
+        || width() <= 0 || height() <= 0) {
         return;
+    }
+    // 点图层或严格水平/垂直的线可能只有零宽或零高范围；为其补充一个
+    // 很小的地理范围，确保“缩放至图层”仍然可用。
+    if (qFuzzyCompare(minLon, maxLon)) {
+        minLon -= 0.005;
+        maxLon += 0.005;
+    }
+    if (qFuzzyCompare(minLat, maxLat)) {
+        minLat -= 0.005;
+        maxLat += 0.005;
+    }
     minLat = std::clamp(minLat, -kMaxLatitude, kMaxLatitude);
     maxLat = std::clamp(maxLat, -kMaxLatitude, kMaxLatitude);
     m_centerLongitude = (minLon + maxLon) / 2.0;

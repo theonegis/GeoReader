@@ -66,8 +66,10 @@ signals:
 
 private:
     void loadDataset(const QString &path);
-    void addVectorLayers(const QString &path);
-    void addRasterLayer(const QString &path);
+    void addVectorLayers(const QString &path, const QString &datasetId,
+                         const QString &datasetName);
+    void addRasterLayer(const QString &path, const QString &datasetId,
+                        const QString &datasetName);
     void setStatus(const QString &message);
 
     LayerModel m_layerModel;

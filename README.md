@@ -1,14 +1,14 @@
 # GeoReader
 
-GeoReader 是一款以 **Qt 6 + Mapnik + GDAL/OGR** 构建的现代桌面空间数据浏览器。它默认显示 OpenStreetMap 底图，可叠加查看 Shapefile、GeoJSON、GeoPackage 和 GeoTIFF。
+GeoReader 是一款以 **Qt 6 + Mapnik + GDAL/OGR** 构建的现代桌面空间数据浏览器。它默认显示 OpenStreetMap 底图，也可切换 Esri 世界影像和 OpenTopoMap 地形图，并叠加查看 Shapefile、GeoJSON、GeoPackage 和 GeoTIFF。
 
 当前版本聚焦 QGIS 中的数据浏览、可视化和识别操作，并以更紧凑、现代的
 界面重新实现；不包含空间数据编辑与复杂分析功能。
 
 ## 界面预览
 
-图层管理面板支持样式即时调整、元信息/属性表入口，以及通过右侧手柄拖动
-改变 Canvas 中的合成顺序。
+图层管理面板支持按数据源分组、样式即时调整、元信息/属性表入口，并可在
+数据源内拖动图层改变 Canvas 合成顺序；右侧浮动面板可通过左边框调整宽度。
 
 ![GeoReader 图层管理界面](docs/images/georeader-layer-management.png)
 
@@ -18,7 +18,9 @@ GeoReader 是一款以 **Qt 6 + Mapnik + GDAL/OGR** 构建的现代桌面空间�
 
 ## 已实现
 
-- OpenStreetMap 标准瓦片底图、磁盘缓存和署名
+- 图层管理面板底部提供可折叠的“底图”图层组，OpenStreetMap、Esri 世界
+  影像和 OpenTopoMap 地形图三项互斥选择，默认启用 OpenStreetMap；各服务
+  使用独立缓存键、最大缩放级别和动态署名
 - 参考 QGIS 的互斥地图工具：默认平移、滚轮缩放、矩形框选缩放、
   矢量要素识别和栅格像元识别
 - 矩形框选缩放，按 `Esc` 可取消框选
@@ -29,8 +31,12 @@ GeoReader 是一款以 **Qt 6 + Mapnik + GDAL/OGR** 构建的现代桌面空间�
   - GeoTIFF (`.tif`, `.tiff`)
   - 自动记住最近一次成功打开文件的目录；目录失效时回退到系统文稿目录
 - 图层管理：
-  - 通过拖动手柄调整图层顺序；列表顶部图层在地图中位于最上方，
-    矢量和栅格可任意交错
+  - 以数据集为父节点、源图层为子节点；数据集与展开的子图层共享浅色
+    容器，每个子图层保留独立卡片，当前图层以左侧竖线高亮
+  - 多图层数据可折叠/展开，并可整组显隐和移除
+  - 通过拖动手柄在数据集内调整图层顺序；列表顶部图层在地图中位于最上方
+  - 图层右键菜单提供“缩放至图层”“打开属性表”和“元信息”；属性表与
+    元信息使用居中、非模态悬浮窗口
   - 显示/隐藏、移除、不透明度
   - 按需查看矢量或栅格元信息，包括驱动、坐标参考系、投影定义、
     数据范围、字段/几何信息以及栅格尺寸、数据类型、像素大小、块大小
@@ -106,7 +112,7 @@ AppController
             ▼
 MapCanvas / QQuickPaintedItem
   ├─ Web Mercator 视口、平移/缩放/框选/识别工具
-  ├─ OSM 256 px 瓦片请求与磁盘缓存
+  ├─ OSM / Esri World Imagery / OpenTopoMap XYZ 瓦片与磁盘缓存
   ├─ RasterRenderer：GDAL 视窗读取、金字塔与内存着色
   ├─ Mapnik：矢量样式与透明背景离屏渲染
   └─ QPainter：底图、栅格、矢量和选中高亮合成
@@ -114,11 +120,23 @@ MapCanvas / QQuickPaintedItem
 
 ### 图层状态
 
-`LayerModel` 是 UI 与渲染器之间唯一的图层状态源。每个
-`LayerSnapshot` 包含数据路径、图层类型、坐标系、可见性、不透明度、
+`LayerModel` 是 UI 与渲染器之间唯一的图层状态源。模型仍以图层快照驱动
+渲染，但通过稳定的 `datasetId` 将同一次打开的数据集及其全部子图层组合为
+一个管理单元；数据集标题栏统一控制可见性和整体移除，子图层只负责样式、
+顺序、元信息与属性表。每个 `LayerSnapshot` 包含数据集标识、数据路径、
+图层类型、坐标系、可见性、不透明度、
 矢量符号、RGB/单波段配置、色带方向、波段范围和 NoData。后台任务只接收
 快照副本和值类型视口，不访问 QML 对象，也不会持有会随 UI 变化的
-`QModelIndex`。
+`QModelIndex`。同一数据集内的图层仍可拖动排序，Canvas 的合成顺序同步更新。
+
+在线底图作为固定的“底图”图层组显示在数据集列表下方，可折叠但不可移除，
+使面板从上到下与地图从上层到下层的图层栈顺序保持一致。
+组内通过单选项保证同一时刻只显示一种底图，初始状态选择 OpenStreetMap；
+切换后立即刷新瓦片、缓存命名空间和地图署名。
+
+右侧浮动面板始终跟随主窗口高度，并可拖动左边框改变宽度；宽度限制在
+286 px 至主窗口宽度的 2/3 之间，避免遮挡整个地图。被省略的数据集名和
+图层名均可通过鼠标悬停提示查看完整文本。
 
 设置使用 `QSettings` 持久化。Qt Quick Style 必须在控件创建前选择，
 因此重启后生效；字体、语言、工具栏透明度、快捷键和图层显示参数即时
@@ -126,13 +144,13 @@ MapCanvas / QQuickPaintedItem
 
 ### 地图坐标与合成顺序
 
-OSM 和 `MapCanvas` 使用 EPSG:3857。加载数据时 GDAL/OGR 将图层范围转换为
+三种底图和 `MapCanvas` 均使用 Web Mercator。加载数据时 GDAL/OGR 将图层范围转换为
 WGS 84 供“缩放至图层”使用；渲染时栅格由 GDAL 动态重投影到当前
 Web Mercator 视窗，矢量由 Mapnik 依据图层 SRS 重投影。
 
 绘制顺序为：
 
-1. OSM 底图瓦片；
+1. 当前选择的底图瓦片（默认 OSM）；
 2. 从图层列表底部到顶部依次绘制所有可见图层，矢量与栅格可以任意交错；
 3. 当前选中要素的白色外描边和橙色高亮；
 4. 框选矩形与界面控件。
@@ -608,14 +626,16 @@ ctest --test-dir build-tests --output-on-failure
 
 - `src/AppController.*`：原生文件对话框、数据加载、查询和设置
 - `src/AttributeTableModel.*`：矢量属性表读取、排序和筛选
-- `src/LayerModel.*`：图层值对象、角色和样式状态
-- `src/MapCanvas.*`：视口、OSM、异步 Mapnik 渲染与鼠标交互
+- `src/LayerModel.*`：数据集分组、图层值对象、角色和样式状态
+- `src/MapCanvas.*`：视口、多源底图、异步 Mapnik 渲染与鼠标交互
 - `qml/Main.qml`：主界面和四个浮动工具面板
 - `qml/components/`：小圆角工具按钮、图标和面板组件
 
 ## 说明
 
-- OSM 标准瓦片需要联网；已设置明确的 User-Agent、256 MB 磁盘缓存与界面署名。
+- 在线底图需要联网；已设置明确的 User-Agent、256 MB 磁盘缓存与随底图
+  切换的界面署名。OpenTopoMap 使用其公开 XYZ 服务并遵循 CC-BY-SA
+  署名要求；Esri 世界影像显示 Esri 及数据提供方署名。
 - 当前是浏览器，不包含要素编辑、投影定义修复、空间分析和地图导出。
 - 首次显示大型数据时会进行离屏渲染；平移/缩放期间通过短防抖避免重复阻塞 UI。
 - 分发安装包时需要遵守 Qt、Mapnik、GDAL 及其传递依赖各自的许可证；

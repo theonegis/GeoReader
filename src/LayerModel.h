@@ -7,6 +7,8 @@
 struct LayerSnapshot
 {
     QString id;
+    QString datasetId;
+    QString datasetName;
     QString name;
     QString path;
     QString sourceLayer;
@@ -42,6 +44,8 @@ class LayerModel final : public QAbstractListModel
 {
     Q_OBJECT
     Q_PROPERTY(int count READ count NOTIFY countChanged)
+    Q_PROPERTY(int datasetCount READ datasetCount NOTIFY datasetCountChanged)
+    Q_PROPERTY(quint64 revision READ revision NOTIFY revisionChanged)
 
 public:
     enum Role {
@@ -69,7 +73,9 @@ public:
         BandMaximumsRole,
         NoDataEnabledRole,
         NoDataValueRole,
-        CrsRole
+        CrsRole,
+        DatasetIdRole,
+        DatasetNameRole
     };
     Q_ENUM(Role)
 
@@ -77,6 +83,8 @@ public:
 
     int rowCount(const QModelIndex &parent = {}) const override;
     int count() const { return m_layers.size(); }
+    int datasetCount() const;
+    quint64 revision() const { return m_revision; }
     QVariant data(const QModelIndex &index, int role) const override;
     bool setData(const QModelIndex &index, const QVariant &value, int role) override;
     Qt::ItemFlags flags(const QModelIndex &index) const override;
@@ -87,6 +95,7 @@ public:
     QVector<LayerSnapshot> snapshots() const;
 
     Q_INVOKABLE QVariantMap get(int row) const;
+    Q_INVOKABLE QVariantMap datasetInfo(const QString &datasetId) const;
     Q_INVOKABLE void setVisible(int row, bool visible);
     Q_INVOKABLE void setOpacity(int row, double opacity);
     Q_INVOKABLE void setVectorStyle(int row, const QColor &lineColor,
@@ -104,11 +113,18 @@ public:
                                      const QString &value);
     Q_INVOKABLE void moveLayer(int from, int to);
     Q_INVOKABLE void removeLayer(int row);
+    Q_INVOKABLE void removeDataset(const QString &datasetId);
+    Q_INVOKABLE void setDatasetVisible(const QString &datasetId, bool visible);
 
 signals:
     void renderingChanged();
     void countChanged();
+    void datasetCountChanged();
+    void revisionChanged();
 
 private:
+    void advanceRevision();
+
     QVector<LayerSnapshot> m_layers;
+    quint64 m_revision = 0;
 };

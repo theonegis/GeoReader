@@ -55,6 +55,10 @@ class MapCanvas : public QQuickPaintedItem
                WRITE setRectangleZoomActive NOTIFY rectangleZoomActiveChanged)
     Q_PROPERTY(QString inspectionMode READ inspectionMode
                WRITE setInspectionMode NOTIFY inspectionModeChanged)
+    Q_PROPERTY(QString baseMap READ baseMap WRITE setBaseMap
+               NOTIFY baseMapChanged)
+    Q_PROPERTY(QString baseMapAttribution READ baseMapAttribution
+               NOTIFY baseMapChanged)
 
 public:
     explicit MapCanvas(QQuickItem *parent = nullptr);
@@ -72,6 +76,8 @@ public:
     bool rendering() const { return m_rendering; }
     bool rectangleZoomActive() const { return m_rectangleZoomActive; }
     QString inspectionMode() const { return m_inspectionMode; }
+    QString baseMap() const { return m_baseMap; }
+    QString baseMapAttribution() const;
 
     Q_INVOKABLE void zoomBy(double delta);
     Q_INVOKABLE void panBy(double horizontalPixels, double verticalPixels);
@@ -79,6 +85,7 @@ public:
                                double maxLon, double maxLat);
     Q_INVOKABLE void setRectangleZoomActive(bool active);
     Q_INVOKABLE void setInspectionMode(const QString &mode);
+    Q_INVOKABLE void setBaseMap(const QString &baseMap);
     Q_INVOKABLE void setSelectedFeatureWkt(const QString &wkt);
     Q_INVOKABLE void clearSelectedFeature();
     Q_INVOKABLE void refresh();
@@ -90,6 +97,7 @@ signals:
     void renderingChanged();
     void rectangleZoomActiveChanged();
     void inspectionModeChanged();
+    void baseMapChanged();
     void mapClicked(double longitude, double latitude);
     void renderError(const QString &message);
 
@@ -144,4 +152,5 @@ private:
     bool m_rectangleZoomActive = false;
     bool m_rendering = false;
     QString m_inspectionMode = QStringLiteral("pan");
+    QString m_baseMap = QStringLiteral("osm");
 };

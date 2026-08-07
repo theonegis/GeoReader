@@ -76,5 +76,52 @@ int main(int argc, char **argv)
                    "Filtered feature is incorrect")) {
         return 5;
     }
+
+    LayerModel groupedLayers;
+    LayerSnapshot roads;
+    roads.datasetId = QStringLiteral("city-data");
+    roads.datasetName = QStringLiteral("City database");
+    roads.name = QStringLiteral("roads");
+    LayerSnapshot buildings = roads;
+    buildings.name = QStringLiteral("buildings");
+    LayerSnapshot elevation;
+    elevation.datasetId = QStringLiteral("elevation-data");
+    elevation.datasetName = QStringLiteral("Elevation");
+    elevation.name = QStringLiteral("DEM");
+    groupedLayers.addLayer(roads);
+    groupedLayers.addLayer(buildings);
+    groupedLayers.addLayer(elevation);
+
+    const QVariantMap cityInfo =
+        groupedLayers.datasetInfo(QStringLiteral("city-data"));
+    if (!expect(groupedLayers.datasetCount() == 2,
+                "Dataset count did not group sibling layers")
+        || !expect(cityInfo.value(QStringLiteral("layerCount")).toInt() == 2,
+                   "Dataset layer count is incorrect")
+        || !expect(cityInfo.value(QStringLiteral("name")).toString()
+                       == QStringLiteral("City database"),
+                   "Dataset name is incorrect")) {
+        return 6;
+    }
+
+    groupedLayers.setDatasetVisible(QStringLiteral("city-data"), false);
+    if (!expect(!groupedLayers.get(0)
+                     .value(QStringLiteral("layerVisible")).toBool()
+                && !groupedLayers.get(1)
+                        .value(QStringLiteral("layerVisible")).toBool(),
+                "Dataset visibility did not update every child layer")) {
+        return 7;
+    }
+
+    groupedLayers.removeDataset(QStringLiteral("city-data"));
+    if (!expect(groupedLayers.count() == 1,
+                "Dataset removal did not remove every child layer")
+        || !expect(groupedLayers.datasetCount() == 1,
+                   "Dataset removal did not update dataset count")
+        || !expect(groupedLayers.get(0).value(QStringLiteral("name"))
+                       == QStringLiteral("DEM"),
+                   "Dataset removal removed an unrelated layer")) {
+        return 8;
+    }
     return 0;
 }

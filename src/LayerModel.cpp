@@ -1,6 +1,7 @@
 #include "LayerModel.h"
 
 #include <QFileInfo>
+#include <QSet>
 #include <QUuid>
 #include <algorithm>
 #include <cmath>
@@ -61,6 +62,8 @@ QVariant LayerModel::data(const QModelIndex &index, int role) const
     case NoDataValueRole: return layer.noDataValue;
     case CrsRole: return layer.crsLabel.isEmpty() ? tr("未知坐标系")
                                                   : layer.crsLabel;
+    case DatasetIdRole: return layer.datasetId;
+    case DatasetNameRole: return layer.datasetName;
     default: return {};
     }
 }
@@ -90,6 +93,7 @@ bool LayerModel::setData(const QModelIndex &index, const QVariant &value, int ro
     default: return false;
     }
     emit dataChanged(index, index, {role});
+    advanceRevision();
     emit renderingChanged();
     return true;
 }
@@ -127,19 +131,41 @@ QHash<int, QByteArray> LayerModel::roleNames() const
         {BandMaximumsRole, "bandMaximums"},
         {NoDataEnabledRole, "noDataEnabled"},
         {NoDataValueRole, "noDataValue"},
-        {CrsRole, "crs"}
+        {CrsRole, "crs"},
+        {DatasetIdRole, "datasetId"},
+        {DatasetNameRole, "datasetName"}
     };
+}
+
+int LayerModel::datasetCount() const
+{
+    QSet<QString> datasets;
+    datasets.reserve(m_layers.size());
+    for (const auto &layer : m_layers)
+        datasets.insert(layer.datasetId);
+    return datasets.size();
 }
 
 void LayerModel::addLayer(LayerSnapshot layer)
 {
     if (layer.id.isEmpty())
         layer.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    if (layer.datasetId.isEmpty())
+        layer.datasetId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    if (layer.datasetName.isEmpty())
+        layer.datasetName = QFileInfo(layer.path).completeBaseName();
+    const bool newDataset = std::none_of(
+        m_layers.cbegin(), m_layers.cend(), [&layer](const LayerSnapshot &item) {
+            return item.datasetId == layer.datasetId;
+        });
     const int row = m_layers.size();
     beginInsertRows({}, row, row);
     m_layers.push_back(std::move(layer));
     endInsertRows();
     emit countChanged();
+    if (newDataset)
+        emit datasetCountChanged();
+    advanceRevision();
     emit renderingChanged();
 }
 
@@ -170,6 +196,36 @@ QVariantMap LayerModel::get(int row) const
     return result;
 }
 
+QVariantMap LayerModel::datasetInfo(const QString &datasetId) const
+{
+    QVariantMap result;
+    int layerCount = 0;
+    int visibleCount = 0;
+    int firstRow = -1;
+    for (int row = 0; row < m_layers.size(); ++row) {
+        const auto &layer = m_layers.at(row);
+        if (layer.datasetId != datasetId)
+            continue;
+        if (firstRow < 0) {
+            firstRow = row;
+            result.insert(QStringLiteral("id"), layer.datasetId);
+            result.insert(QStringLiteral("name"), layer.datasetName);
+            result.insert(QStringLiteral("path"), layer.path);
+        }
+        ++layerCount;
+        if (layer.visible)
+            ++visibleCount;
+    }
+    if (firstRow < 0)
+        return {};
+    result.insert(QStringLiteral("firstRow"), firstRow);
+    result.insert(QStringLiteral("layerCount"), layerCount);
+    result.insert(QStringLiteral("visibleCount"), visibleCount);
+    result.insert(QStringLiteral("allVisible"), visibleCount == layerCount);
+    result.insert(QStringLiteral("anyVisible"), visibleCount > 0);
+    return result;
+}
+
 void LayerModel::setVisible(int row, bool visible)
 {
     setData(index(row), visible, VisibleRole);
@@ -190,6 +246,7 @@ void LayerModel::setVectorStyle(int row, const QColor &lineColor,
     layer.fillColor = fillColor;
     layer.lineWidth = std::clamp(lineWidth, 0.25, 12.0);
     emit dataChanged(index(row), index(row), {LineColorRole, FillColorRole, LineWidthRole});
+    advanceRevision();
     emit renderingChanged();
 }
 
@@ -224,6 +281,7 @@ void LayerModel::setRasterStyle(int row, const QString &mode, int redBand,
                      {RasterModeRole, RedBandRole, GreenBandRole, BlueBandRole,
                       GrayBandRole, ColorRampRole, ColorRampReversedRole,
                       StretchModeRole});
+    advanceRevision();
     emit renderingChanged();
 }
 
@@ -244,6 +302,7 @@ void LayerModel::setBandRange(int row, int band, double minimum,
     layer.bandMaximums[indexInLayer] = maximum;
     emit dataChanged(index(row), index(row),
                      {BandMinimumsRole, BandMaximumsRole});
+    advanceRevision();
     emit renderingChanged();
 }
 
@@ -266,6 +325,7 @@ void LayerModel::setBandRanges(const QString &layerId,
     iterator->bandMaximums = maximums;
     emit dataChanged(index(row), index(row),
                      {BandMinimumsRole, BandMaximumsRole});
+    advanceRevision();
     emit renderingChanged();
 }
 
@@ -286,6 +346,7 @@ void LayerModel::setRasterNoData(int row, bool enabled, const QString &value)
                                               : normalized;
     emit dataChanged(index(row), index(row),
                      {NoDataEnabledRole, NoDataValueRole});
+    advanceRevision();
     emit renderingChanged();
 }
 
@@ -299,6 +360,7 @@ void LayerModel::moveLayer(int from, int to)
     beginMoveRows({}, from, from, {}, destination);
     m_layers.move(from, to);
     endMoveRows();
+    advanceRevision();
     emit renderingChanged();
 }
 
@@ -306,9 +368,76 @@ void LayerModel::removeLayer(int row)
 {
     if (row < 0 || row >= m_layers.size())
         return;
+    const QString datasetId = m_layers.at(row).datasetId;
+    const bool removesDataset = std::count_if(
+        m_layers.cbegin(), m_layers.cend(), [&datasetId](const auto &layer) {
+            return layer.datasetId == datasetId;
+        }) == 1;
     beginRemoveRows({}, row, row);
     m_layers.removeAt(row);
     endRemoveRows();
     emit countChanged();
+    if (removesDataset)
+        emit datasetCountChanged();
+    advanceRevision();
     emit renderingChanged();
+}
+
+void LayerModel::removeDataset(const QString &datasetId)
+{
+    if (datasetId.isEmpty())
+        return;
+
+    bool removed = false;
+    for (int end = m_layers.size() - 1; end >= 0;) {
+        if (m_layers.at(end).datasetId != datasetId) {
+            --end;
+            continue;
+        }
+        int first = end;
+        while (first > 0 && m_layers.at(first - 1).datasetId == datasetId)
+            --first;
+        beginRemoveRows({}, first, end);
+        m_layers.erase(m_layers.begin() + first, m_layers.begin() + end + 1);
+        endRemoveRows();
+        removed = true;
+        end = first - 1;
+    }
+    if (!removed)
+        return;
+
+    emit countChanged();
+    emit datasetCountChanged();
+    advanceRevision();
+    emit renderingChanged();
+}
+
+void LayerModel::setDatasetVisible(const QString &datasetId, bool visible)
+{
+    int first = -1;
+    int last = -1;
+    bool changed = false;
+    for (int row = 0; row < m_layers.size(); ++row) {
+        auto &layer = m_layers[row];
+        if (layer.datasetId != datasetId)
+            continue;
+        first = first < 0 ? row : first;
+        last = row;
+        if (layer.visible != visible) {
+            layer.visible = visible;
+            changed = true;
+        }
+    }
+    if (!changed)
+        return;
+
+    emit dataChanged(index(first), index(last), {VisibleRole});
+    advanceRevision();
+    emit renderingChanged();
+}
+
+void LayerModel::advanceRevision()
+{
+    ++m_revision;
+    emit revisionChanged();
 }

@@ -22,8 +22,19 @@ ApplicationWindow {
     property var rasterResults: []
     property var vectorResult: ({})
     property var metadataResult: ({})
+    property var datasetExpansionState: ({})
     property int shortcutRevision: 0
     property color panelShadow: Qt.rgba(0, 0, 0, .18)
+    readonly property real mapOverlayRightMargin:
+        activePanel === "layers" ? layerPanel.width + 24
+        : (activePanel === "raster" ? rasterPanel.width + 24
+        : (activePanel === "vector" ? vectorPanel.width + 24
+        : (activePanel === "settings" ? settingsPanel.width + 24 : 14)))
+    readonly property var baseMapOptions: [
+        { text: qsTr("OpenStreetMap 标准地图"), value: "osm" },
+        { text: qsTr("Esri 世界影像"), value: "esri_imagery" },
+        { text: qsTr("OpenTopoMap 地形图"), value: "opentopomap" }
+    ]
 
     onActivePanelChanged: {
         mapCanvas.rectangleZoomActive = false
@@ -97,6 +108,40 @@ ApplicationWindow {
         selectedVectorLayer = remappedIndex(selectedVectorLayer, from, to)
         app.layerModel.moveLayer(from, to)
         layerList.currentIndex = selectedLayer
+    }
+
+    function zoomToLayer(row) {
+        const layer = app.layerModel.get(row)
+        if (!layer || layer.minLon === undefined)
+            return
+        selectedLayer = row
+        layerList.currentIndex = row
+        mapCanvas.fitBounds(layer.minLon, layer.minLat,
+                            layer.maxLon, layer.maxLat)
+    }
+
+    function datasetIsExpanded(datasetId) {
+        datasetExpansionState
+        return datasetExpansionState[datasetId] !== false
+    }
+
+    function toggleDataset(datasetId) {
+        const nextState = Object.assign({}, datasetExpansionState)
+        nextState[datasetId] = !datasetIsExpanded(datasetId)
+        datasetExpansionState = nextState
+    }
+
+    function datasetTint() {
+        return Qt.rgba(palette.highlight.r, palette.highlight.g,
+                       palette.highlight.b, .065)
+    }
+
+    function baseMapDisplayName(value) {
+        for (let index = 0; index < baseMapOptions.length; ++index) {
+            if (baseMapOptions[index].value === value)
+                return baseMapOptions[index].text
+        }
+        return baseMapOptions[0].text
     }
 
     function showMetadata(row) {
@@ -384,25 +429,327 @@ ApplicationWindow {
         title: qsTr("图层")
         subtitle: app.layerModel.count === 0
                   ? qsTr("尚未加载空间数据")
-                  : qsTr("%1 个图层 · 点击图层编辑样式").arg(app.layerModel.count)
+                  : qsTr("%1 个数据 · %2 个图层")
+                    .arg(app.layerModel.datasetCount)
+                    .arg(app.layerModel.count)
         onCloseRequested: window.activePanel = ""
 
         body: Item {
             anchors.fill: parent
 
-            ListView {
-                id: layerList
+            GridLayout {
                 anchors.fill: parent
                 anchors.margins: 10
+                columns: 1
+                rowSpacing: 8
+
+                Item {
+                    id: baseMapGroup
+                    property bool expanded: true
+                    Layout.row: 1
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: expanded
+                                            ? 62 + window.baseMapOptions.length * 44
+                                            : 62
+                    clip: true
+
+                    Behavior on Layout.preferredHeight {
+                        NumberAnimation {
+                            duration: 150
+                            easing.type: Easing.OutCubic
+                        }
+                    }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.topMargin: 8
+                        radius: 7
+                        color: window.datasetTint()
+                        border.width: 1
+                        border.color: Qt.rgba(palette.highlight.r,
+                                              palette.highlight.g,
+                                              palette.highlight.b, .18)
+                    }
+
+                    Item {
+                        id: baseMapGroupHeader
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: 8
+                        height: 54
+
+                        AppIcon {
+                            id: baseMapGroupIcon
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 20
+                            height: 20
+                            name: "layers"
+                            color: palette.highlight
+                        }
+
+                        Column {
+                            anchors.left: baseMapGroupIcon.right
+                            anchors.leftMargin: 9
+                            anchors.right: baseMapCollapseButton.left
+                            anchors.rightMargin: 8
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 1
+                            Label {
+                                width: parent.width
+                                text: qsTr("底图")
+                                font.weight: Font.DemiBold
+                                font.pixelSize: 12
+                            }
+                            Label {
+                                width: parent.width
+                                text: window.baseMapDisplayName(mapCanvas.baseMap)
+                                color: palette.mid
+                                font.pixelSize: 10
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        ToolButton {
+                            id: baseMapCollapseButton
+                            anchors.right: parent.right
+                            anchors.rightMargin: 7
+                            anchors.verticalCenter: parent.verticalCenter
+                            implicitWidth: 30
+                            implicitHeight: 30
+                            onClicked: baseMapGroup.expanded =
+                                           !baseMapGroup.expanded
+                            contentItem: AppIcon {
+                                name: "chevron"
+                                color: palette.mid
+                                rotation: baseMapGroup.expanded ? 90 : 0
+                                Behavior on rotation {
+                                    NumberAnimation {
+                                        duration: 140
+                                        easing.type: Easing.OutCubic
+                                    }
+                                }
+                            }
+                            ToolTip.visible: hovered
+                            ToolTip.text: baseMapGroup.expanded
+                                          ? qsTr("折叠底图") : qsTr("展开底图")
+                        }
+                    }
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: baseMapGroupHeader.bottom
+                        visible: baseMapGroup.expanded
+                        spacing: 0
+
+                        Repeater {
+                            model: window.baseMapOptions
+                            delegate: Rectangle {
+                                required property var modelData
+                                width: parent.width
+                                height: 44
+                                radius: 6
+                                color: mapCanvas.baseMap === modelData.value
+                                       ? Qt.rgba(palette.highlight.r,
+                                                 palette.highlight.g,
+                                                 palette.highlight.b, .13)
+                                       : Qt.rgba(palette.window.r,
+                                                 palette.window.g,
+                                                 palette.window.b, .72)
+
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    width: 3
+                                    radius: 1.5
+                                    visible: mapCanvas.baseMap
+                                             === parent.modelData.value
+                                    color: palette.highlight
+                                }
+
+                                RadioButton {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    text: parent.modelData.text
+                                    checked: mapCanvas.baseMap
+                                             === parent.modelData.value
+                                    onClicked: mapCanvas.baseMap =
+                                                   parent.modelData.value
+                                }
+                            }
+                        }
+                    }
+                }
+
+            ListView {
+                id: layerList
+                Layout.row: 0
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 clip: true
-                spacing: 6
+                spacing: 0
                 model: app.layerModel
                 currentIndex: window.selectedLayer
                 ScrollBar.vertical: ScrollBar {}
+                section.property: "datasetId"
+                section.criteria: ViewSection.FullString
+                section.labelPositioning: ViewSection.InlineLabels
+
+                section.delegate: Item {
+                    id: datasetHeader
+                    required property string section
+                    width: ListView.view.width
+                    height: 62
+                    readonly property bool expanded:
+                        window.datasetIsExpanded(section)
+
+                    property var info: {
+                        // revision 使整组显隐、移除图层后，分组标题中的数量与
+                        // 三态复选框立即刷新。
+                        const modelRevision = app.layerModel.revision
+                        return app.layerModel.datasetInfo(section)
+                    }
+
+                    Rectangle {
+                        id: datasetHeaderBackground
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: 8
+                        anchors.bottom: parent.bottom
+                        radius: 7
+                        color: window.datasetTint()
+                        border.width: 1
+                        border.color: Qt.rgba(palette.highlight.r,
+                                              palette.highlight.g,
+                                              palette.highlight.b, .18)
+                    }
+
+                    CheckBox {
+                        id: datasetVisibilityCheck
+                        anchors.left: parent.left
+                        anchors.leftMargin: 7
+                        anchors.verticalCenter:
+                            datasetHeaderBackground.verticalCenter
+                        tristate: true
+                        checkState: parent.info.allVisible
+                                    ? Qt.Checked
+                                    : (parent.info.anyVisible
+                                       ? Qt.PartiallyChecked
+                                       : Qt.Unchecked)
+                        nextCheckState: function() {
+                            return checkState === Qt.Checked
+                                    ? Qt.Unchecked : Qt.Checked
+                        }
+                        onClicked: app.layerModel.setDatasetVisible(
+                                       parent.section,
+                                       checkState === Qt.Checked)
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("显示或隐藏整个数据")
+                    }
+
+                    AppIcon {
+                        id: datasetIcon
+                        anchors.left: datasetVisibilityCheck.right
+                        anchors.leftMargin: 3
+                        anchors.verticalCenter:
+                            datasetHeaderBackground.verticalCenter
+                        width: 20
+                        height: 20
+                        name: "folder"
+                        color: palette.highlight
+                    }
+
+                    Column {
+                        anchors.left: datasetIcon.right
+                        anchors.leftMargin: 8
+                        anchors.right: collapseDatasetButton.left
+                        anchors.rightMargin: 7
+                        anchors.verticalCenter:
+                            datasetHeaderBackground.verticalCenter
+                        spacing: 1
+
+                        Label {
+                            id: datasetNameLabel
+                            width: parent.width
+                            text: datasetHeader.info.name || qsTr("未命名数据")
+                            font.weight: Font.DemiBold
+                            font.pixelSize: 12
+                            elide: Text.ElideMiddle
+                            HoverHandler { id: datasetNameHover }
+                            ToolTip.visible: datasetNameHover.hovered
+                            ToolTip.delay: 500
+                            ToolTip.text: datasetHeader.info.name || ""
+                        }
+                        Label {
+                            width: parent.width
+                            text: qsTr("%1 个图层").arg(
+                                      datasetHeader.info.layerCount || 0)
+                            color: palette.mid
+                            font.pixelSize: 10
+                        }
+                    }
+
+                    ToolButton {
+                        id: collapseDatasetButton
+                        anchors.right: removeDatasetButton.left
+                        anchors.rightMargin: 2
+                        anchors.verticalCenter:
+                            datasetHeaderBackground.verticalCenter
+                        implicitWidth: 30
+                        implicitHeight: 30
+                        onClicked: window.toggleDataset(datasetHeader.section)
+                        contentItem: AppIcon {
+                            name: "chevron"
+                            color: palette.mid
+                            rotation: datasetHeader.expanded ? 90 : 0
+                            Behavior on rotation {
+                                NumberAnimation {
+                                    duration: 140
+                                    easing.type: Easing.OutCubic
+                                }
+                            }
+                        }
+                        ToolTip.visible: hovered
+                        ToolTip.text: datasetHeader.expanded
+                                      ? qsTr("折叠图层") : qsTr("展开图层")
+                    }
+
+                    ToolButton {
+                        id: removeDatasetButton
+                        anchors.right: parent.right
+                        anchors.rightMargin: 7
+                        anchors.verticalCenter:
+                            datasetHeaderBackground.verticalCenter
+                        implicitWidth: 32
+                        implicitHeight: 30
+                        contentItem: AppIcon {
+                            name: "trash"
+                            color: removeDatasetButton.hovered
+                                   ? "#D94A4A" : palette.mid
+                        }
+                        onClicked: {
+                            app.layerModel.removeDataset(parent.section)
+                            window.selectedLayer = -1
+                            window.selectedVectorLayer = -1
+                            window.vectorResult = ({})
+                            mapCanvas.clearSelectedFeature()
+                        }
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("移除整个数据")
+                    }
+                }
 
                 delegate: Rectangle {
                     id: layerDelegate
                     required property int index
+                    required property string datasetId
+                    required property string datasetName
                     required property string name
                     required property string layerType
                     required property string geometryType
@@ -432,6 +779,15 @@ ApplicationWindow {
                     Drag.hotSpot.y: 30
                     z: reorderHandler.active ? 20 : 0
                     opacity: reorderHandler.active ? .88 : 1
+
+                    property var groupInfo: {
+                        const modelRevision = app.layerModel.revision
+                        return app.layerModel.datasetInfo(datasetId)
+                    }
+                    readonly property bool datasetExpanded:
+                        window.datasetIsExpanded(datasetId)
+                    readonly property bool isLastInDataset:
+                        index === groupInfo.firstRow + groupInfo.layerCount - 1
 
                     function applyRasterDisplay() {
                         const singleBand = layerDelegate.bandCount === 1
@@ -470,29 +826,53 @@ ApplicationWindow {
                             stretchModeBox.currentValue)
                     }
 
+                    readonly property real expandedHeight:
+                        (ListView.isCurrentItem
+                         ? layerHeader.height + layerEditor.implicitHeight + 24
+                         : 62) + (isLastInDataset ? 8 : 0)
                     width: ListView.view.width
-                    height: ListView.isCurrentItem
-                            ? layerHeader.height + layerEditor.implicitHeight + 24
-                            : 62
-                    radius: 7
-                    color: ListView.isCurrentItem
-                           ? Qt.rgba(palette.highlight.r, palette.highlight.g,
-                                     palette.highlight.b, .10)
-                           : Qt.rgba(palette.text.r, palette.text.g,
-                                     palette.text.b, .035)
-                    border.width: ListView.isCurrentItem ? 1 : 0
-                    border.color: Qt.rgba(palette.highlight.r, palette.highlight.g,
-                                          palette.highlight.b, .28)
+                    height: datasetExpanded ? expandedHeight : 0
+                    visible: height > 0
+                    enabled: datasetExpanded
+                    color: window.datasetTint()
                     clip: true
 
                     Behavior on height {
                         NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
                     }
 
+                    Rectangle {
+                        id: layerCard
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: 3
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin:
+                            layerDelegate.isLastInDataset ? 8 : 3
+                        radius: 7
+                        color: layerDelegate.ListView.isCurrentItem
+                               ? Qt.rgba(palette.highlight.r,
+                                         palette.highlight.g,
+                                         palette.highlight.b, .13)
+                               : Qt.rgba(palette.window.r, palette.window.g,
+                                         palette.window.b, .72)
+                        border.width: layerDelegate.ListView.isCurrentItem ? 1 : 0
+                        border.color: Qt.rgba(palette.highlight.r,
+                                              palette.highlight.g,
+                                              palette.highlight.b, .28)
+                    }
+
                     Item {
                         id: layerHeader
                         width: parent.width
+                        y: 3
                         height: 62
+                        HoverHandler { id: layerHeaderHover }
+                        ToolTip.visible: layerHeaderHover.hovered
+                                         && layerNameLabel.truncated
+                        ToolTip.delay: 500
+                        ToolTip.text: layerDelegate.name
 
                         CheckBox {
                             id: visibilityCheck
@@ -536,6 +916,7 @@ ApplicationWindow {
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 2
                             Label {
+                                id: layerNameLabel
                                 width: parent.width
                                 text: layerDelegate.name
                                 elide: Text.ElideMiddle
@@ -600,29 +981,77 @@ ApplicationWindow {
                                 xAxis.enabled: false
                                 onActiveChanged: {
                                     layerList.interactive = !active
-                                    if (!active)
-                                        layerDelegate.x = 0
                                 }
                             }
 
                             ToolTip.visible: gripHover.hovered
-                            ToolTip.text: qsTr("拖动调整图层顺序")
+                            ToolTip.text: qsTr("在当前数据内拖动调整图层顺序")
                             HoverHandler { id: gripHover }
                         }
 
                         TapHandler {
+                            acceptedButtons: Qt.LeftButton
                             onTapped: {
                                 window.selectedLayer = layerDelegate.index
                                 layerList.currentIndex = layerDelegate.index
                             }
                         }
+
+                        TapHandler {
+                            acceptedButtons: Qt.RightButton
+                            onTapped: {
+                                window.selectedLayer = layerDelegate.index
+                                layerList.currentIndex = layerDelegate.index
+                                layerContextMenu.popup()
+                            }
+                        }
+
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: layerCard.top
+                        anchors.bottom: layerCard.bottom
+                        width: 3
+                        radius: 1.5
+                        visible: layerDelegate.ListView.isCurrentItem
+                        color: palette.highlight
+                    }
+
+                    Menu {
+                        id: layerContextMenu
+                        MenuItem {
+                            text: qsTr("缩放至图层")
+                            onTriggered:
+                                window.zoomToLayer(layerDelegate.index)
+                        }
+                        MenuSeparator {}
+                        MenuItem {
+                            text: qsTr("打开属性表")
+                            visible: layerDelegate.layerType === "vector"
+                            onTriggered:
+                                window.showAttributeTable(layerDelegate.index)
+                        }
+                        MenuItem {
+                            text: qsTr("元信息")
+                            onTriggered:
+                                window.showMetadata(layerDelegate.index)
+                        }
                     }
 
                     DropArea {
-                        anchors.fill: parent
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.topMargin: 3
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin:
+                            layerDelegate.isLastInDataset ? 8 : 3
                         onEntered: function(drag) {
                             if (drag.source
                                     && drag.source !== layerDelegate
+                                    && drag.source.datasetId
+                                       === layerDelegate.datasetId
                                     && drag.source.index
                                        !== layerDelegate.index) {
                                 window.moveLayer(drag.source.index,
@@ -636,7 +1065,9 @@ ApplicationWindow {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.top: layerHeader.bottom
-                        anchors.margins: 12
+                        anchors.leftMargin: 12
+                        anchors.rightMargin: 12
+                        anchors.topMargin: 12
                         spacing: 8
                         visible: layerDelegate.ListView.isCurrentItem
 
@@ -1116,40 +1547,6 @@ ApplicationWindow {
                             }
                         }
 
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Button {
-                                text: qsTr("元信息")
-                                font.pixelSize: 10
-                                onClicked:
-                                    window.showMetadata(layerDelegate.index)
-                            }
-                            Button {
-                                visible: layerDelegate.layerType === "vector"
-                                text: qsTr("打开属性表")
-                                font.pixelSize: 10
-                                onClicked:
-                                    window.showAttributeTable(
-                                        layerDelegate.index)
-                            }
-                            Item { Layout.fillWidth: true }
-                            ToolButton {
-                                id: removeLayerButton
-                                implicitWidth: 32
-                                implicitHeight: 30
-                                contentItem: AppIcon {
-                                    name: "trash"
-                                    color: removeLayerButton.hovered ? "#D94A4A"
-                                                                     : palette.mid
-                                }
-                                onClicked: {
-                                    app.layerModel.removeLayer(layerDelegate.index)
-                                    window.selectedLayer = -1
-                                }
-                                ToolTip.visible: hovered
-                                ToolTip.text: qsTr("移除图层")
-                            }
-                        }
                     }
                 }
 
@@ -1159,6 +1556,7 @@ ApplicationWindow {
                     text: qsTr("点击左侧打开按钮添加数据")
                     color: palette.mid
                 }
+            }
             }
         }
     }
@@ -1570,7 +1968,7 @@ ApplicationWindow {
             Label {
                 text: window.longitudeText(mapCanvas.mouseLongitude)
                       + ", " + window.latitudeText(mapCanvas.mouseLatitude)
-                font.family: "Menlo"
+                font.family: app.fontFamily
                 font.pixelSize: 10
             }
             Rectangle {
@@ -1593,14 +1991,19 @@ ApplicationWindow {
     }
 
     Label {
+        id: baseMapAttributionLabel
         anchors.right: parent.right
-        anchors.rightMargin: window.activePanel === "" ? 14 : 352
+        anchors.rightMargin: window.mapOverlayRightMargin
         anchors.bottom: parent.bottom
         anchors.bottomMargin: 10
-        text: "© OpenStreetMap contributors"
+        width: Math.min(implicitWidth,
+                        window.width - window.mapOverlayRightMargin - 82)
+        text: mapCanvas.baseMapAttribution
         color: "#4C5663"
         font.pixelSize: 9
         padding: 4
+        wrapMode: Text.Wrap
+        horizontalAlignment: Text.AlignRight
         background: Rectangle {
             radius: 4
             color: Qt.rgba(1, 1, 1, .78)
