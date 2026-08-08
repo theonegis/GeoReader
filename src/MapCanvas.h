@@ -118,6 +118,7 @@ private:
 
     QPointF screenToLonLat(const QPointF &screenPoint) const;
     MapViewport currentViewport() const;
+    bool isTopmostMapItemAt(const QPointF &position) const;
     void updateMouseCoordinate(const QPointF &position);
     void updateCursor();
     void scheduleOverlayRender();

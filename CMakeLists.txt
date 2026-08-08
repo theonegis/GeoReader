@@ -256,6 +256,36 @@ if(GEOREADER_BUILD_TESTS)
         GDAL::GDAL
     )
     add_test(NAME GeoReaderModelTests COMMAND GeoReaderModelTests)
+
+    qt_add_executable(GeoReaderInteractionTests
+        tests/MapCanvasInteractionTests.cpp
+        src/LayerModel.cpp
+        src/LayerModel.h
+        src/MapCanvas.cpp
+        src/MapCanvas.h
+        src/RasterRenderer.cpp
+        src/RasterRenderer.h
+    )
+    target_include_directories(GeoReaderInteractionTests PRIVATE src)
+    target_compile_definitions(GeoReaderInteractionTests PRIVATE
+        GEOREADER_MAPNIK_INPUT_DIR="${MAPNIK_INPUT_PLUGIN_DIR}"
+        GEOREADER_VERSION="${PROJECT_VERSION}"
+        QT_NO_CAST_FROM_ASCII
+    )
+    target_link_libraries(GeoReaderInteractionTests PRIVATE
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Network
+        Qt6::Quick
+        Qt6::Concurrent
+        GDAL::GDAL
+        "${ICU_UC_LIBRARY}"
+        "${ICU_I18N_LIBRARY}"
+        ${GEOREADER_MAPNIK_LINK_TARGETS}
+    )
+    add_test(NAME GeoReaderInteractionTests COMMAND GeoReaderInteractionTests)
+    set_tests_properties(GeoReaderInteractionTests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 qt_add_qml_module(GeoReader

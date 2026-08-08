@@ -11,6 +11,7 @@
 #include <QNetworkReply>
 #include <QPainter>
 #include <QPainterPath>
+#include <QQuickWindow>
 #include <QStandardPaths>
 #include <QThread>
 #include <QWheelEvent>
@@ -41,6 +42,20 @@ namespace {
 constexpr double kMaxLatitude = 85.05112878;
 constexpr double kEarthRadius = 6378137.0;
 constexpr int kTileSize = 256;
+
+QQuickItem *deepestItemAt(QQuickItem *root, const QPointF &scenePosition)
+{
+    QQuickItem *current = root;
+    while (current) {
+        const QPointF localPosition = current->mapFromScene(scenePosition);
+        QQuickItem *child =
+            current->childAt(localPosition.x(), localPosition.y());
+        if (!child)
+            break;
+        current = child;
+    }
+    return current;
+}
 
 int maximumTileZoom(const QString &baseMap)
 {
@@ -981,10 +996,34 @@ void MapCanvas::hoverMoveEvent(QHoverEvent *event)
 
 void MapCanvas::wheelEvent(QWheelEvent *event)
 {
+    // 滚轮事件可能在 TableView/ScrollView 到达边界后继续传递到下层
+    // QQuickItem。只有鼠标位置最上层的可视项属于 MapCanvas 时才缩放，
+    // 从源头避免悬浮面板、属性表和工具栏上的滚轮影响地图。
+    if (!isTopmostMapItemAt(event->position())) {
+        event->ignore();
+        return;
+    }
+
     const double steps = event->angleDelta().y() / 120.0;
     if (!qFuzzyIsNull(steps))
         zoomBy(std::clamp(steps, -2.0, 2.0));
     event->accept();
+}
+
+bool MapCanvas::isTopmostMapItemAt(const QPointF &position) const
+{
+    QQuickWindow *quickWindow = window();
+    QQuickItem *root = quickWindow ? quickWindow->contentItem() : nullptr;
+    if (!root)
+        return true;
+
+    const QPointF scenePosition = mapToScene(position);
+    QQuickItem *topmost = deepestItemAt(root, scenePosition);
+    for (QQuickItem *item = topmost; item; item = item->parentItem()) {
+        if (item == this)
+            return true;
+    }
+    return false;
 }
 
 void MapCanvas::updateMouseCoordinate(const QPointF &position)
