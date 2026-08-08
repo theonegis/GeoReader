@@ -1,10 +1,17 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "georeader",
-  "version-string": "1.0.1",
+  "version-string": "2.0.0",
   "builtin-baseline": "827a2e1203bc19941126c657166da44f2623acc4",
   "dependencies": [
-    "gdal",
+    {
+      "name": "gdal",
+      "default-features": true,
+      "features": [
+        "hdf5",
+        "netcdf"
+      ]
+    },
     {
       "name": "mapnik",
       "default-features": true,

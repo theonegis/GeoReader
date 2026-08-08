@@ -24,6 +24,7 @@ ApplicationWindow {
     property var metadataResult: ({})
     property var datasetExpansionState: ({})
     property int shortcutRevision: 0
+    property var multidimensionalSliceValues: []
     property color panelShadow: Qt.rgba(0, 0, 0, .18)
     readonly property real mapOverlayRightMargin:
         activePanel === "layers" ? layerPanel.width + 24
@@ -189,6 +190,25 @@ ApplicationWindow {
         return app.shortcut(action)
     }
 
+    function resetMultidimensionalArray() {
+        const pending = app.pendingMultidimensionalImport
+        if (!pending.arrays || multidimensionalVariable.currentIndex < 0
+                || multidimensionalVariable.currentIndex >= pending.arrays.length)
+            return
+        const array = pending.arrays[multidimensionalVariable.currentIndex]
+        const values = []
+        for (let index = 0; index < array.dimensions.length; ++index)
+            values.push(0)
+        multidimensionalSliceValues = values
+        multidimensionalX.currentIndex = array.defaultXDimension
+        multidimensionalY.currentIndex = array.defaultYDimension
+        multidimensionalCrs.text = array.crsLabel
+                                   && array.crsLabel.indexOf("EPSG:") === 0
+                                   ? array.crsLabel : array.crs
+        multidimensionalCoordinateMode.currentIndex =
+                array.hasSpatialReference ? 0 : 3
+    }
+
     Shortcut {
         sequence: window.shortcutFor("open")
         onActivated: app.openFiles()
@@ -235,6 +255,19 @@ ApplicationWindow {
         }
         function onShortcutsChanged() {
             window.shortcutRevision += 1
+        }
+        function onPendingMultidimensionalImportChanged() {
+            const pending = app.pendingMultidimensionalImport
+            if (pending.arrays && pending.arrays.length > 0) {
+                multidimensionalVariable.currentIndex = 0
+                window.resetMultidimensionalArray()
+                multidimensionalDialog.open()
+            } else {
+                multidimensionalDialog.close()
+            }
+        }
+        function onCanvasModeRequested(mode, pixelWidth, pixelHeight) {
+            mapCanvas.setCoordinateMode(mode, pixelWidth, pixelHeight)
         }
     }
 
@@ -446,9 +479,10 @@ ApplicationWindow {
                 Item {
                     id: baseMapGroup
                     property bool expanded: true
+                    visible: mapCanvas.coordinateMode === "geographic"
                     Layout.row: 1
                     Layout.fillWidth: true
-                    Layout.preferredHeight: expanded
+                    Layout.preferredHeight: !visible ? 0 : expanded
                                             ? 62 + window.baseMapOptions.length * 44
                                             : 62
                     clip: true
@@ -1966,8 +2000,12 @@ ApplicationWindow {
             anchors.centerIn: parent
             spacing: 8
             Label {
-                text: window.longitudeText(mapCanvas.mouseLongitude)
-                      + ", " + window.latitudeText(mapCanvas.mouseLatitude)
+                text: mapCanvas.coordinateMode === "pixel"
+                      ? qsTr("Column %1, Row %2")
+                            .arg(Math.floor(mapCanvas.mouseLongitude))
+                            .arg(Math.floor(mapCanvas.mouseLatitude))
+                      : window.longitudeText(mapCanvas.mouseLongitude)
+                        + ", " + window.latitudeText(mapCanvas.mouseLatitude)
                 font.family: app.fontFamily
                 font.pixelSize: 10
             }
@@ -1992,6 +2030,7 @@ ApplicationWindow {
 
     Label {
         id: baseMapAttributionLabel
+        visible: mapCanvas.coordinateMode === "geographic"
         anchors.right: parent.right
         anchors.rightMargin: window.mapOverlayRightMargin
         anchors.bottom: parent.bottom
@@ -2425,6 +2464,333 @@ ApplicationWindow {
                           .arg(app.attributeTableModel.totalCount)
                     color: palette.mid
                     font.pixelSize: 10
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: multidimensionalDialog
+        modal: true
+        focus: true
+        closePolicy: Popup.NoAutoClose
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(780, window.width - 48)
+        height: Math.min(680, window.height - 48)
+        padding: 0
+
+        readonly property var pending: app.pendingMultidimensionalImport
+        readonly property color surfaceColor: palette.window.r
+                                              + palette.window.g
+                                              + palette.window.b > 1.5
+                                              ? "#FAFAFB" : "#202328"
+        readonly property color foregroundColor: palette.window.r
+                                                 + palette.window.g
+                                                 + palette.window.b > 1.5
+                                                 ? "#20242A" : "#F3F5F7"
+        readonly property color mutedColor: palette.window.r
+                                            + palette.window.g
+                                            + palette.window.b > 1.5
+                                            ? "#69717D" : "#AEB5BF"
+        palette.windowText: foregroundColor
+        palette.text: foregroundColor
+        palette.buttonText: foregroundColor
+        palette.mid: mutedColor
+        readonly property var currentArray:
+            pending.arrays && multidimensionalVariable.currentIndex >= 0
+            && multidimensionalVariable.currentIndex < pending.arrays.length
+            ? pending.arrays[multidimensionalVariable.currentIndex] : ({})
+
+        background: Rectangle {
+            radius: 9
+            color: multidimensionalDialog.surfaceColor
+            border.width: 1
+            border.color: Qt.rgba(palette.text.r, palette.text.g,
+                                  palette.text.b, .16)
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 0
+
+            Item {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 68
+                Column {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 20
+                    anchors.right: multidimensionalClose.left
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    Label {
+                        width: parent.width
+                        text: qsTr("导入多维数据")
+                        color: multidimensionalDialog.foregroundColor
+                        font.pixelSize: 17
+                        font.weight: Font.DemiBold
+                    }
+                    Label {
+                        width: parent.width
+                        text: multidimensionalDialog.pending.fileName
+                              + " · " + multidimensionalDialog.pending.driver
+                        color: multidimensionalDialog.mutedColor
+                        font.pixelSize: 11
+                        elide: Text.ElideMiddle
+                    }
+                }
+                ToolButton {
+                    id: multidimensionalClose
+                    anchors.right: parent.right
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    enabled: !app.multidimensionalImportBusy
+                    onClicked: app.cancelMultidimensionalImport()
+                    contentItem: AppIcon {
+                        name: "close"
+                        color: palette.mid
+                    }
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("取消")
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
+                color: Qt.rgba(palette.text.r, palette.text.g,
+                               palette.text.b, .10)
+            }
+
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                contentWidth: availableWidth
+
+                ColumnLayout {
+                    width: parent.width
+                    spacing: 12
+                    anchors.margins: 20
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: qsTr("变量")
+                        color: multidimensionalDialog.foregroundColor
+                        font.weight: Font.DemiBold
+                    }
+                    ComboBox {
+                        id: multidimensionalVariable
+                        Layout.fillWidth: true
+                        model: multidimensionalDialog.pending.arrays || []
+                        textRole: "fullName"
+                        palette.text: multidimensionalDialog.foregroundColor
+                        palette.buttonText: multidimensionalDialog.foregroundColor
+                        palette.windowText: multidimensionalDialog.foregroundColor
+                        onActivated: window.resetMultidimensionalArray()
+                    }
+
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: 2
+                        columnSpacing: 12
+                        rowSpacing: 6
+                        Label { text: qsTr("数据类型") }
+                        Label {
+                            Layout.fillWidth: true
+                            text: multidimensionalDialog.currentArray.dataType
+                                  || "—"
+                            color: multidimensionalDialog.mutedColor
+                        }
+                        Label { text: qsTr("单位") }
+                        Label {
+                            Layout.fillWidth: true
+                            text: multidimensionalDialog.currentArray.unit || "—"
+                            color: multidimensionalDialog.mutedColor
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 1
+                        color: Qt.rgba(palette.text.r, palette.text.g,
+                                       palette.text.b, .08)
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: qsTr("空间维与坐标解释")
+                        color: multidimensionalDialog.foregroundColor
+                        font.weight: Font.DemiBold
+                    }
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: 2
+                        columnSpacing: 12
+                        rowSpacing: 8
+                        Label { text: qsTr("X 维") }
+                        ComboBox {
+                            id: multidimensionalX
+                            Layout.fillWidth: true
+                            model: multidimensionalDialog.currentArray.dimensions
+                                   || []
+                            textRole: "name"
+                            palette.text: multidimensionalDialog.foregroundColor
+                            palette.buttonText: multidimensionalDialog.foregroundColor
+                        }
+                        Label { text: qsTr("Y 维") }
+                        ComboBox {
+                            id: multidimensionalY
+                            Layout.fillWidth: true
+                            model: multidimensionalDialog.currentArray.dimensions
+                                   || []
+                            textRole: "name"
+                            palette.text: multidimensionalDialog.foregroundColor
+                            palette.buttonText: multidimensionalDialog.foregroundColor
+                        }
+                        Label { text: qsTr("坐标模式") }
+                        ComboBox {
+                            id: multidimensionalCoordinateMode
+                            Layout.fillWidth: true
+                            textRole: "text"
+                            valueRole: "value"
+                            palette.text: multidimensionalDialog.foregroundColor
+                            palette.buttonText: multidimensionalDialog.foregroundColor
+                            model: [
+                                { text: qsTr("自动（采用文件元数据）"), value: "auto" },
+                                { text: qsTr("地理坐标"), value: "geographic" },
+                                { text: qsTr("投影坐标"), value: "projected" },
+                                { text: qsTr("像素坐标（不显示底图）"), value: "pixel" }
+                            ]
+                        }
+                        Label { text: qsTr("源 CRS") }
+                        TextField {
+                            id: multidimensionalCrs
+                            Layout.fillWidth: true
+                            enabled: multidimensionalCoordinateMode.currentValue
+                                     !== "pixel"
+                            placeholderText: qsTr("例如 EPSG:4326 或 EPSG:32648")
+                            selectByMouse: true
+                            color: multidimensionalDialog.foregroundColor
+                            placeholderTextColor: multidimensionalDialog.mutedColor
+                        }
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: qsTr("未在文件中声明 CRS 时，GeoReader 不会根据数值范围猜测。投影坐标必须明确指定 CRS；也可以切换到像素坐标模式。")
+                        wrapMode: Text.Wrap
+                        color: multidimensionalDialog.mutedColor
+                        font.pixelSize: 10
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 1
+                        color: Qt.rgba(palette.text.r, palette.text.g,
+                                       palette.text.b, .08)
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: qsTr("额外维切片")
+                        color: multidimensionalDialog.foregroundColor
+                        font.weight: Font.DemiBold
+                    }
+                    Repeater {
+                        model: multidimensionalDialog.currentArray.dimensions
+                               || []
+                        delegate: RowLayout {
+                            required property var modelData
+                            required property int index
+                            Layout.fillWidth: true
+                            visible: index !== multidimensionalX.currentIndex
+                                     && index !== multidimensionalY.currentIndex
+                            Label {
+                                Layout.fillWidth: true
+                                text: parent.modelData.name
+                                      + "  (0…"
+                                      + Math.max(0, Number(parent.modelData.size) - 1)
+                                      + ")"
+                                elide: Text.ElideMiddle
+                                color: multidimensionalDialog.foregroundColor
+                                ToolTip.visible: sliceHover.hovered
+                                ToolTip.text: parent.modelData.fullName
+                                HoverHandler { id: sliceHover }
+                            }
+                            SpinBox {
+                                from: 0
+                                to: Math.min(2147483647,
+                                             Math.max(0, Number(parent.modelData.size) - 1))
+                                value: window.multidimensionalSliceValues[parent.index]
+                                       || 0
+                                editable: true
+                                palette.text: multidimensionalDialog.foregroundColor
+                                palette.buttonText: multidimensionalDialog.foregroundColor
+                                onValueModified: {
+                                    const values =
+                                        window.multidimensionalSliceValues.slice()
+                                    values[parent.index] = value
+                                    window.multidimensionalSliceValues = values
+                                }
+                            }
+                        }
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        visible: !app.multidimensionalDriverCapabilities.hdf4
+                        text: qsTr("提示：当前 GDAL 未包含 HDF4 驱动；NetCDF 与 HDF5 不受影响。")
+                        wrapMode: Text.Wrap
+                        color: "#B36A18"
+                        font.pixelSize: 10
+                    }
+                    Item { Layout.preferredHeight: 4 }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
+                color: Qt.rgba(palette.text.r, palette.text.g,
+                               palette.text.b, .10)
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.margins: 14
+                spacing: 8
+                BusyIndicator {
+                    running: app.multidimensionalImportBusy
+                    visible: running
+                    Layout.preferredWidth: 24
+                    Layout.preferredHeight: 24
+                }
+                Label {
+                    Layout.fillWidth: true
+                    text: app.multidimensionalImportBusy
+                          ? qsTr("正在建立按需渲染视图…") : ""
+                    color: multidimensionalDialog.mutedColor
+                    font.pixelSize: 10
+                }
+                Button {
+                    text: qsTr("取消")
+                    enabled: !app.multidimensionalImportBusy
+                    onClicked: app.cancelMultidimensionalImport()
+                }
+                Button {
+                    text: qsTr("添加图层")
+                    highlighted: true
+                    enabled: !app.multidimensionalImportBusy
+                             && multidimensionalX.currentIndex >= 0
+                             && multidimensionalY.currentIndex >= 0
+                             && multidimensionalX.currentIndex
+                                !== multidimensionalY.currentIndex
+                    onClicked: app.confirmMultidimensionalImport(
+                        multidimensionalVariable.currentIndex,
+                        multidimensionalX.currentIndex,
+                        multidimensionalY.currentIndex,
+                        window.multidimensionalSliceValues,
+                        multidimensionalCoordinateMode.currentValue,
+                        multidimensionalCrs.text)
                 }
             }
         }

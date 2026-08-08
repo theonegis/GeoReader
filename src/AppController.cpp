@@ -361,9 +361,12 @@ void AppController::openFiles()
     const QString startPath =
         QFileInfo(savedPath).isDir() ? savedPath : documentsPath;
     const QString filter =
-        tr("空间数据 (*.shp *.geojson *.json *.gpkg *.tif *.tiff);;"
+        tr("空间数据 (*.shp *.geojson *.json *.gpkg *.tif *.tiff "
+           "*.nc *.nc4 *.cdf *.h5 *.hdf5 *.he5 *.hdf);;"
            "矢量数据 (*.shp *.geojson *.json *.gpkg);;"
-           "栅格数据 (*.tif *.tiff);;所有文件 (*)");
+           "栅格数据 (*.tif *.tiff);;"
+           "多维数据 (*.nc *.nc4 *.cdf *.h5 *.hdf5 *.he5 *.hdf);;"
+           "所有文件 (*)");
     const QStringList paths = QFileDialog::getOpenFileNames(
         nullptr, tr("打开空间数据"), startPath, filter, nullptr, {});
     if (paths.isEmpty())
@@ -484,6 +487,34 @@ void AppController::loadDataset(const QString &path)
         return;
     }
 
+    const QString extension = QFileInfo(path).suffix().toLower();
+    const QSet<QString> multidimensionalExtensions {
+        QStringLiteral("nc"), QStringLiteral("nc4"), QStringLiteral("cdf"),
+        QStringLiteral("h5"), QStringLiteral("hdf5"), QStringLiteral("he5"),
+        QStringLiteral("hdf")
+    };
+    if (multidimensionalExtensions.contains(extension)) {
+        const MultidimensionalScanResult scan =
+            MultidimensionalDatasetInspector::scan(path);
+        if (scan.isValid()) {
+            m_pendingMultidimensionalImport = scan;
+            emit pendingMultidimensionalImportChanged();
+            setStatus(tr("请选择 %1 中要显示的变量和切片")
+                          .arg(QFileInfo(path).fileName()));
+            return;
+        }
+        if (extension == QStringLiteral("hdf")
+            && !MultidimensionalDatasetInspector::driverCapabilities()
+                    .value(QStringLiteral("hdf4")).toBool()) {
+            setStatus(tr("当前 GDAL 未包含 HDF4 驱动；该 .hdf 文件可能是 "
+                         "HDF4。请使用带 HDF4 支持的安装包。详细信息：%1")
+                          .arg(scan.error));
+            return;
+        }
+        setStatus(tr("无法读取多维数据：%1").arg(scan.error));
+        return;
+    }
+
     GdalDatasetPtr vectorDataset(
         static_cast<GDALDataset *>(GDALOpenEx(path.toUtf8().constData(),
                                               GDAL_OF_VECTOR | GDAL_OF_READONLY,
@@ -558,10 +589,16 @@ void AppController::addVectorLayers(const QString &path,
 
 void AppController::addRasterLayer(const QString &path,
                                    const QString &datasetId,
-                                   const QString &datasetName)
+                                   const QString &datasetName,
+                                   const QString &sourceUri,
+                                   const QString &layerName,
+                                   const QString &coordinateMode,
+                                   const QString &arrayFullName,
+                                   const QString &sliceDescription)
 {
+    const QString rasterSource = sourceUri.isEmpty() ? path : sourceUri;
     GdalDatasetPtr dataset(
-        static_cast<GDALDataset *>(GDALOpenEx(path.toUtf8().constData(),
+        static_cast<GDALDataset *>(GDALOpenEx(rasterSource.toUtf8().constData(),
                                               GDAL_OF_RASTER | GDAL_OF_READONLY,
                                               nullptr, nullptr, nullptr)),
         GDALClose);
@@ -569,7 +606,12 @@ void AppController::addRasterLayer(const QString &path,
         return;
 
     double transform[6] {};
-    if (dataset->GetGeoTransform(transform) != CE_None) {
+    const bool hasTransform = dataset->GetGeoTransform(transform) == CE_None;
+    const bool pixelMode = coordinateMode == QStringLiteral("pixel")
+                           || (coordinateMode == QStringLiteral("auto")
+                               && (!hasTransform
+                                   || dataset->GetSpatialRef() == nullptr));
+    if (!hasTransform && !pixelMode) {
         setStatus(tr("栅格缺少有效的地理参考：%1").arg(QFileInfo(path).fileName()));
         return;
     }
@@ -599,8 +641,15 @@ void AppController::addRasterLayer(const QString &path,
     layer.datasetId = datasetId;
     layer.datasetName = datasetName;
     layer.path = path;
-    layer.name = datasetName;
+    layer.sourceUri = rasterSource;
+    layer.name = layerName.isEmpty() ? datasetName : layerName;
     layer.type = QStringLiteral("raster");
+    layer.coordinateMode = pixelMode ? QStringLiteral("pixel")
+                                     : QStringLiteral("geographic");
+    layer.multidimensionalArray = arrayFullName;
+    layer.multidimensionalSlice = sliceDescription;
+    layer.pixelWidth = dataset->GetRasterXSize();
+    layer.pixelHeight = dataset->GetRasterYSize();
     layer.bandCount = dataset->GetRasterCount();
     layer.redBand = 1;
     layer.greenBand = std::min(2, layer.bandCount);
@@ -626,24 +675,42 @@ void AppController::addRasterLayer(const QString &path,
         }
     }
     layer.noDataEnabled = true;
-    layer.srs = srsProjString(dataset->GetSpatialRef());
-    layer.crsLabel = srsDisplayName(dataset->GetSpatialRef());
-    if (!extentToWgs84(extent, dataset->GetSpatialRef(),
-                       layer.minLon, layer.minLat, layer.maxLon, layer.maxLat)) {
-        setStatus(tr("无法转换栅格范围：%1").arg(QFileInfo(path).fileName()));
-        return;
+    if (pixelMode) {
+        layer.srs.clear();
+        layer.crsLabel = tr("像素坐标（无地理参考）");
+        layer.minLon = 0.0;
+        layer.minLat = 0.0;
+        layer.maxLon = width;
+        layer.maxLat = height;
+    } else {
+        layer.srs = srsProjString(dataset->GetSpatialRef());
+        layer.crsLabel = srsDisplayName(dataset->GetSpatialRef());
+        if (!extentToWgs84(extent, dataset->GetSpatialRef(),
+                           layer.minLon, layer.minLat,
+                           layer.maxLon, layer.maxLat)) {
+            setStatus(tr("无法转换栅格范围：%1")
+                          .arg(QFileInfo(path).fileName()));
+            return;
+        }
     }
 
     m_layerModel.addLayer(layer);
+    emit canvasModeRequested(layer.coordinateMode,
+                             layer.pixelWidth, layer.pixelHeight);
     emit layerAdded(layer.minLon, layer.minLat, layer.maxLon, layer.maxLat);
-    setStatus(tr("已加载栅格图层：%1（%2 个波段）")
-              .arg(layer.name).arg(layer.bandCount));
+    if (pixelMode) {
+        setStatus(tr("%1 没有可用的地理参考，已进入像素模式并隐藏底图")
+                      .arg(layer.name));
+    } else {
+        setStatus(tr("已加载栅格图层：%1（%2 个波段）")
+                      .arg(layer.name).arg(layer.bandCount));
+    }
 
     const QString layerId = layer.id;
     QPointer<AppController> self(this);
     // Let the first viewport render win the initial I/O bandwidth. Statistics
     // are useful for refinement, but must not delay the first visible frame.
-    QTimer::singleShot(1500, this, [self, path, layerId] {
+    QTimer::singleShot(1500, this, [self, rasterSource, layerId] {
         if (!self)
             return;
         auto *watcher = new QFutureWatcher<RasterStatistics>(self);
@@ -657,12 +724,12 @@ void AppController::addRasterLayer(const QString &path,
                         statistics.layerId, statistics.minimums,
                         statistics.maximums);
             });
-        watcher->setFuture(QtConcurrent::run([path, layerId] {
+        watcher->setFuture(QtConcurrent::run([rasterSource, layerId] {
             RasterStatistics statistics;
             statistics.layerId = layerId;
             GdalDatasetPtr source(
                 static_cast<GDALDataset *>(GDALOpenEx(
-                    path.toUtf8().constData(),
+                    rasterSource.toUtf8().constData(),
                     GDAL_OF_RASTER | GDAL_OF_READONLY,
                     nullptr, nullptr, nullptr)),
                 GDALClose);
@@ -682,6 +749,132 @@ void AppController::addRasterLayer(const QString &path,
     });
 }
 
+void AppController::confirmMultidimensionalImport(
+    int arrayIndex, int xDimension, int yDimension,
+    const QVariantList &sliceIndices, const QString &coordinateMode,
+    const QString &crs)
+{
+    if (m_multidimensionalImportBusy
+        || arrayIndex < 0
+        || arrayIndex >= m_pendingMultidimensionalImport.arrays.size()) {
+        return;
+    }
+
+    const MultidimensionalArray array =
+        m_pendingMultidimensionalImport.arrays.at(arrayIndex);
+    if (xDimension < 0 || yDimension < 0 || xDimension == yDimension
+        || xDimension >= array.dimensions.size()
+        || yDimension >= array.dimensions.size()) {
+        setStatus(tr("请选择两个不同的 X/Y 维"));
+        return;
+    }
+
+    static const QSet<QString> modes {
+        QStringLiteral("auto"), QStringLiteral("geographic"),
+        QStringLiteral("projected"), QStringLiteral("pixel")
+    };
+    const QString normalizedMode = modes.contains(coordinateMode)
+        ? coordinateMode : QStringLiteral("auto");
+    if (normalizedMode == QStringLiteral("projected")
+        && crs.trimmed().isEmpty() && array.crs.isEmpty()) {
+        setStatus(tr("投影坐标模式必须指定源 CRS（例如 EPSG:32648）"));
+        return;
+    }
+
+    MultidimensionalImportSpec spec;
+    spec.path = m_pendingMultidimensionalImport.path;
+    spec.arrayFullName = array.fullName;
+    spec.sourceUri = array.sourceUri;
+    spec.coordinateMode = normalizedMode;
+    spec.crs = crs.trimmed().isEmpty() ? array.crs : crs.trimmed();
+    spec.xDimension = xDimension;
+    spec.yDimension = yDimension;
+    spec.sliceIndices.resize(array.dimensions.size());
+    spec.dimensionSizes.reserve(array.dimensions.size());
+    for (const auto &dimension : array.dimensions)
+        spec.dimensionSizes.push_back(dimension.size);
+    QStringList sliceLabels;
+    for (int index = 0; index < array.dimensions.size(); ++index) {
+        quint64 value = index < sliceIndices.size()
+            ? sliceIndices.at(index).toULongLong() : 0;
+        const quint64 size = array.dimensions.at(index).size;
+        if (size > 0)
+            value = std::min(value, size - 1);
+        if (index == xDimension || index == yDimension)
+            value = 0;
+        else
+            sliceLabels.push_back(
+                QStringLiteral("%1=%2")
+                    .arg(array.dimensions.at(index).name)
+                    .arg(value));
+        spec.sliceIndices[index] = value;
+    }
+
+    m_multidimensionalImportBusy = true;
+    emit multidimensionalImportBusyChanged();
+    setStatus(tr("正在建立变量视图：%1").arg(array.fullName));
+
+    const MultidimensionalScanResult pending =
+        m_pendingMultidimensionalImport;
+    auto *watcher =
+        new QFutureWatcher<PreparedMultidimensionalRaster>(this);
+    connect(watcher, &QFutureWatcher<PreparedMultidimensionalRaster>::finished,
+            this, [this, watcher, pending, array, normalizedMode,
+                   sliceLabels] {
+        const PreparedMultidimensionalRaster prepared = watcher->result();
+        watcher->deleteLater();
+        m_multidimensionalImportBusy = false;
+        emit multidimensionalImportBusyChanged();
+        if (!prepared.isValid()) {
+            setStatus(tr("多维变量加载失败：%1").arg(prepared.error));
+            return;
+        }
+
+        QString datasetId;
+        for (const auto &existing : m_layerModel.snapshots()) {
+            if (QFileInfo(existing.path).absoluteFilePath()
+                == QFileInfo(pending.path).absoluteFilePath()) {
+                datasetId = existing.datasetId;
+                break;
+            }
+        }
+        if (datasetId.isEmpty()) {
+            datasetId =
+                QUuid::createUuid().toString(QUuid::WithoutBraces);
+        }
+        const QString effectiveMode =
+            normalizedMode == QStringLiteral("pixel")
+                || !prepared.hasGeoreference
+            ? QStringLiteral("pixel")
+            : QStringLiteral("geographic");
+        const QString layerName = sliceLabels.isEmpty()
+            ? array.name
+            : QStringLiteral("%1 [%2]")
+                  .arg(array.name, sliceLabels.join(QStringLiteral(", ")));
+        addRasterLayer(
+            pending.path, datasetId,
+            QFileInfo(pending.path).completeBaseName(), prepared.sourceUri,
+            layerName, effectiveMode, array.fullName,
+            sliceLabels.join(QStringLiteral(", ")));
+
+        m_pendingMultidimensionalImport = {};
+        emit pendingMultidimensionalImportChanged();
+    });
+    watcher->setFuture(QtConcurrent::run(
+        [spec] {
+            return MultidimensionalDatasetInspector::prepareRasterView(spec);
+        }));
+}
+
+void AppController::cancelMultidimensionalImport()
+{
+    if (m_multidimensionalImportBusy)
+        return;
+    m_pendingMultidimensionalImport = {};
+    emit pendingMultidimensionalImportChanged();
+    setStatus(tr("已取消多维数据导入"));
+}
+
 QVariantList AppController::queryRasters(double longitude, double latitude) const
 {
     // Identify runs on the GUI thread. Reusing read-only handles avoids an
@@ -691,11 +884,13 @@ QVariantList AppController::queryRasters(double longitude, double latitude) cons
     for (const auto &layer : m_layerModel.snapshots()) {
         if (!layer.visible || layer.type != QStringLiteral("raster"))
             continue;
-        auto dataset = datasetCache.value(layer.path);
+        const QString rasterSource =
+            layer.sourceUri.isEmpty() ? layer.path : layer.sourceUri;
+        auto dataset = datasetCache.value(rasterSource);
         if (!dataset) {
             dataset = std::shared_ptr<GDALDataset>(
                 static_cast<GDALDataset *>(GDALOpenEx(
-                    layer.path.toUtf8().constData(),
+                    rasterSource.toUtf8().constData(),
                     GDAL_OF_RASTER | GDAL_OF_READONLY,
                     nullptr, nullptr, nullptr)),
                 [](GDALDataset *handle) {
@@ -703,23 +898,34 @@ QVariantList AppController::queryRasters(double longitude, double latitude) cons
                         GDALClose(handle);
                 });
             if (dataset)
-                datasetCache.insert(layer.path, dataset);
+                datasetCache.insert(rasterSource, dataset);
         }
         if (!dataset)
             continue;
 
         double x = longitude;
         double y = latitude;
-        if (auto transform = wgs84To(dataset->GetSpatialRef()); transform)
-            transform->Transform(1, &x, &y);
+        if (layer.coordinateMode != QStringLiteral("pixel")) {
+            if (auto transform = wgs84To(dataset->GetSpatialRef()); transform)
+                transform->Transform(1, &x, &y);
+        }
 
         double geoTransform[6] {};
         double inverse[6] {};
-        if (dataset->GetGeoTransform(geoTransform) != CE_None
-            || !GDALInvGeoTransform(geoTransform, inverse))
-            continue;
-        const int pixel = static_cast<int>(std::floor(inverse[0] + inverse[1] * x + inverse[2] * y));
-        const int line = static_cast<int>(std::floor(inverse[3] + inverse[4] * x + inverse[5] * y));
+        int pixel = 0;
+        int line = 0;
+        if (layer.coordinateMode == QStringLiteral("pixel")) {
+            pixel = static_cast<int>(std::floor(x));
+            line = static_cast<int>(std::floor(y));
+        } else {
+            if (dataset->GetGeoTransform(geoTransform) != CE_None
+                || !GDALInvGeoTransform(geoTransform, inverse))
+                continue;
+            pixel = static_cast<int>(std::floor(
+                inverse[0] + inverse[1] * x + inverse[2] * y));
+            line = static_cast<int>(std::floor(
+                inverse[3] + inverse[4] * x + inverse[5] * y));
+        }
         if (pixel < 0 || line < 0 || pixel >= dataset->GetRasterXSize()
             || line >= dataset->GetRasterYSize())
             continue;
@@ -857,7 +1063,9 @@ QVariantMap AppController::layerMetadata(int row) const
     addEntry(spatial, tr("坐标参考系"),
              layer->crsLabel.isEmpty() ? tr("未知坐标系")
                                        : layer->crsLabel);
-    addEntry(spatial, tr("WGS 84 范围"),
+    addEntry(spatial,
+             layer->coordinateMode == QStringLiteral("pixel")
+                 ? tr("像素范围") : tr("WGS 84 范围"),
              QStringLiteral("%1, %2 — %3, %4")
                  .arg(layer->minLon, 0, 'g', 12)
                  .arg(layer->minLat, 0, 'g', 12)
@@ -932,9 +1140,11 @@ QVariantMap AppController::layerMetadata(int row) const
             }
         }
     } else {
+        const QString rasterSource =
+            layer->sourceUri.isEmpty() ? layer->path : layer->sourceUri;
         GdalDatasetPtr dataset(
             static_cast<GDALDataset *>(GDALOpenEx(
-                layer->path.toUtf8().constData(),
+                rasterSource.toUtf8().constData(),
                 GDAL_OF_RASTER | GDAL_OF_READONLY,
                 nullptr, nullptr, nullptr)),
             GDALClose);
@@ -943,6 +1153,18 @@ QVariantMap AppController::layerMetadata(int row) const
                     {QStringLiteral("entries"), entries}};
 
         const QString raster = tr("栅格数据");
+        if (!layer->multidimensionalArray.isEmpty()) {
+            const QString multidimensional = tr("多维数据");
+            addEntry(multidimensional, tr("变量"),
+                     layer->multidimensionalArray);
+            addEntry(multidimensional, tr("切片"),
+                     layer->multidimensionalSlice.isEmpty()
+                         ? tr("二维变量（无需额外切片）")
+                         : layer->multidimensionalSlice);
+            addEntry(multidimensional, tr("坐标模式"),
+                     layer->coordinateMode == QStringLiteral("pixel")
+                         ? tr("像素坐标") : tr("地理坐标"));
+        }
         addEntry(general, tr("驱动"),
                  QString::fromUtf8(dataset->GetDriverName()));
         addEntry(raster, tr("尺寸"),

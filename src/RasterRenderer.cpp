@@ -97,7 +97,8 @@ QString cacheKey(const LayerSnapshot &layer,
                  const QVector<int> &bands)
 {
     QStringList parts {
-        layer.path,
+        layer.sourceUri.isEmpty() ? layer.path : layer.sourceUri,
+        viewport.coordinateMode,
         QString::number(QFileInfo(layer.path).lastModified().toMSecsSinceEpoch()),
         QString::number(viewport.width),
         QString::number(viewport.height),
@@ -152,15 +153,144 @@ readViewport(const LayerSnapshot &layer,
     if (auto cached = cachedBuffer(key))
         return cached;
 
+    const QString rasterSource =
+        layer.sourceUri.isEmpty() ? layer.path : layer.sourceUri;
     DatasetPtr source(
         static_cast<GDALDataset *>(GDALOpenEx(
-            layer.path.toUtf8().constData(),
+            rasterSource.toUtf8().constData(),
             GDAL_OF_RASTER | GDAL_OF_READONLY,
             nullptr, nullptr, nullptr)),
         GDALClose);
     if (!source) {
-        error = QStringLiteral("GDAL cannot open %1").arg(layer.path);
+        error = QStringLiteral("GDAL cannot open %1").arg(rasterSource);
         return {};
+    }
+
+    if (viewport.coordinateMode == QStringLiteral("pixel")) {
+        const qsizetype pixelCount =
+            static_cast<qsizetype>(viewport.width) * viewport.height;
+        auto buffer = std::make_shared<RasterViewportBuffer>();
+        buffer->width = viewport.width;
+        buffer->height = viewport.height;
+        buffer->bandCount = selectedBands.size();
+        buffer->samples.fill(
+            std::numeric_limits<float>::quiet_NaN(),
+            pixelCount * selectedBands.size());
+        buffer->alpha.fill(0.0F, pixelCount);
+
+        const double spanX =
+            viewport.maxMercatorX - viewport.minMercatorX;
+        const double spanY =
+            viewport.maxMercatorY - viewport.minMercatorY;
+        const int sourceX0 = std::clamp(
+            static_cast<int>(std::floor(viewport.minMercatorX)),
+            0, source->GetRasterXSize());
+        const int sourceY0 = std::clamp(
+            static_cast<int>(std::floor(viewport.minMercatorY)),
+            0, source->GetRasterYSize());
+        const int sourceX1 = std::clamp(
+            static_cast<int>(std::ceil(viewport.maxMercatorX)),
+            0, source->GetRasterXSize());
+        const int sourceY1 = std::clamp(
+            static_cast<int>(std::ceil(viewport.maxMercatorY)),
+            0, source->GetRasterYSize());
+        if (sourceX1 <= sourceX0 || sourceY1 <= sourceY0
+            || spanX <= 0.0 || spanY <= 0.0) {
+            insertBuffer(key, buffer);
+            return buffer;
+        }
+
+        const int destinationX0 = std::clamp(
+            static_cast<int>(std::lround(
+                (sourceX0 - viewport.minMercatorX) / spanX
+                * viewport.width)),
+            0, viewport.width - 1);
+        const int destinationY0 = std::clamp(
+            static_cast<int>(std::lround(
+                (sourceY0 - viewport.minMercatorY) / spanY
+                * viewport.height)),
+            0, viewport.height - 1);
+        const int destinationX1 = std::clamp(
+            static_cast<int>(std::lround(
+                (sourceX1 - viewport.minMercatorX) / spanX
+                * viewport.width)),
+            destinationX0 + 1, viewport.width);
+        const int destinationY1 = std::clamp(
+            static_cast<int>(std::lround(
+                (sourceY1 - viewport.minMercatorY) / spanY
+                * viewport.height)),
+            destinationY0 + 1, viewport.height);
+        const int destinationWidth = destinationX1 - destinationX0;
+        const int destinationHeight = destinationY1 - destinationY0;
+        const qsizetype destinationPixelCount =
+            static_cast<qsizetype>(destinationWidth) * destinationHeight;
+
+        for (int outputBand = 0; outputBand < selectedBands.size();
+             ++outputBand) {
+            GDALRasterBand *band =
+                source->GetRasterBand(selectedBands.at(outputBand));
+            if (!band) {
+                error = QStringLiteral("GDAL cannot open a selected array band");
+                return {};
+            }
+            QVector<float> samples(destinationPixelCount);
+            GDALRasterIOExtraArg arguments;
+            INIT_RASTERIO_EXTRA_ARG(arguments);
+            arguments.eResampleAlg = GRIORA_Bilinear;
+            if (band->RasterIO(
+                    GF_Read, sourceX0, sourceY0,
+                    sourceX1 - sourceX0, sourceY1 - sourceY0,
+                    samples.data(), destinationWidth, destinationHeight,
+                    GDT_Float32, 0, 0, &arguments) != CE_None) {
+                error = QStringLiteral("GDAL cannot read the current array window");
+                return {};
+            }
+            for (int y = 0; y < destinationHeight; ++y) {
+                const qsizetype sourceOffset =
+                    static_cast<qsizetype>(y) * destinationWidth;
+                const qsizetype destinationOffset =
+                    static_cast<qsizetype>(destinationY0 + y)
+                        * viewport.width
+                    + destinationX0;
+                std::copy_n(
+                    samples.cbegin() + sourceOffset, destinationWidth,
+                    buffer->samples.begin()
+                        + outputBand * pixelCount + destinationOffset);
+            }
+        }
+
+        bool noDataIsNumber = false;
+        const double configuredNoData =
+            layer.noDataValue.toDouble(&noDataIsNumber);
+        const bool noDataIsNaN =
+            layer.noDataValue.compare(QStringLiteral("nan"),
+                                      Qt::CaseInsensitive) == 0;
+        for (int y = destinationY0; y < destinationY1; ++y) {
+            for (int x = destinationX0; x < destinationX1; ++x) {
+                const qsizetype index =
+                    static_cast<qsizetype>(y) * viewport.width + x;
+                bool transparent = false;
+                if (layer.noDataEnabled) {
+                    transparent = true;
+                    for (int band = 0; band < selectedBands.size(); ++band) {
+                        const float value =
+                            buffer->samples.at(band * pixelCount + index);
+                        const bool isNoData =
+                            (noDataIsNaN && std::isnan(value))
+                            || (noDataIsNumber
+                                && static_cast<double>(value)
+                                       == configuredNoData);
+                        if (!isNoData) {
+                            transparent = false;
+                            break;
+                        }
+                    }
+                }
+                buffer->alpha[index] = transparent ? 0.0F : 255.0F;
+            }
+        }
+        insertBuffer(key, buffer);
+        return buffer;
     }
 
     QStringList optionStrings {

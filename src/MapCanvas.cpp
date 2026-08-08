@@ -275,7 +275,11 @@ double parsedNoData(const QString &text)
 TemporaryVrt createDisplayVrt(const LayerSnapshot &layer, quint64 generation)
 {
     DatasetPtr source(
-        static_cast<GDALDataset *>(GDALOpenEx(layer.path.toUtf8().constData(),
+        static_cast<GDALDataset *>(GDALOpenEx(
+                                              (layer.sourceUri.isEmpty()
+                                                   ? layer.path
+                                                   : layer.sourceUri)
+                                                  .toUtf8().constData(),
                                               GDAL_OF_RASTER | GDAL_OF_READONLY,
                                               nullptr, nullptr, nullptr)),
         GDALClose);
@@ -488,6 +492,8 @@ void MapCanvas::setLayerModel(LayerModel *model)
 
 QString MapCanvas::baseMapAttribution() const
 {
+    if (m_coordinateMode == QStringLiteral("pixel"))
+        return {};
     if (m_baseMap == QStringLiteral("esri_imagery")) {
         return tr("Tiles © Esri — Esri, Maxar, Earthstar Geographics, "
                   "and the GIS User Community");
@@ -497,6 +503,37 @@ QString MapCanvas::baseMapAttribution() const
                   "Map style © OpenTopoMap (CC-BY-SA)");
     }
     return tr("© OpenStreetMap contributors");
+}
+
+void MapCanvas::setCoordinateMode(const QString &mode,
+                                  int pixelWidth, int pixelHeight)
+{
+    const QString normalized = mode == QStringLiteral("pixel")
+        ? QStringLiteral("pixel") : QStringLiteral("geographic");
+    const bool changed = normalized != m_coordinateMode;
+    m_coordinateMode = normalized;
+    if (m_coordinateMode == QStringLiteral("pixel")) {
+        m_pixelCenterX = std::max(0, pixelWidth) / 2.0;
+        m_pixelCenterY = std::max(0, pixelHeight) / 2.0;
+        const double availableWidth = std::max(1.0, width() - 72.0);
+        const double availableHeight = std::max(1.0, height() - 72.0);
+        m_pixelUnitsPerScreenPixel = std::max(
+            1e-9, std::max(pixelWidth / availableWidth,
+                           pixelHeight / availableHeight));
+        m_zoomLevel = 1.0;
+    }
+    if (changed) {
+        emit coordinateModeChanged();
+        emit baseMapChanged();
+    }
+    emit viewportChanged();
+    {
+        QMutexLocker locker(&m_imageMutex);
+        m_overlay = {};
+        m_overlayViewport = {};
+    }
+    update();
+    scheduleOverlayRender();
 }
 
 void MapCanvas::setBaseMap(const QString &baseMap)
@@ -552,6 +589,16 @@ QPointF MapCanvas::lonLatToMercator(double longitude, double latitude)
 
 QPointF MapCanvas::screenToLonLat(const QPointF &screenPoint) const
 {
+    if (m_coordinateMode == QStringLiteral("pixel")) {
+        return {
+            m_pixelCenterX
+                + (screenPoint.x() - width() / 2.0)
+                      * m_pixelUnitsPerScreenPixel,
+            m_pixelCenterY
+                + (screenPoint.y() - height() / 2.0)
+                      * m_pixelUnitsPerScreenPixel
+        };
+    }
     const QPointF center = lonLatToWorld(m_centerLongitude, m_centerLatitude,
                                          m_zoomLevel);
     return worldToLonLat(center.x() + screenPoint.x() - width() / 2.0,
@@ -561,11 +608,22 @@ QPointF MapCanvas::screenToLonLat(const QPointF &screenPoint) const
 
 MapViewport MapCanvas::currentViewport() const
 {
+    if (m_coordinateMode == QStringLiteral("pixel")) {
+        const QPointF topLeft = screenToLonLat({0.0, 0.0});
+        const QPointF bottomRight = screenToLonLat({width(), height()});
+        return {
+            QStringLiteral("pixel"),
+            std::max(1, static_cast<int>(std::round(width()))),
+            std::max(1, static_cast<int>(std::round(height()))),
+            topLeft.x(), topLeft.y(), bottomRight.x(), bottomRight.y()
+        };
+    }
     const QPointF topLeft = screenToLonLat({0.0, 0.0});
     const QPointF bottomRight = screenToLonLat({width(), height()});
     const QPointF min = lonLatToMercator(topLeft.x(), bottomRight.y());
     const QPointF max = lonLatToMercator(bottomRight.x(), topLeft.y());
     return {
+        QStringLiteral("geographic"),
         std::max(1, static_cast<int>(std::round(width()))),
         std::max(1, static_cast<int>(std::round(height()))),
         min.x(), min.y(), max.x(), max.y()
@@ -590,11 +648,16 @@ void MapCanvas::paint(QPainter *painter)
             viewport.maxMercatorX - viewport.minMercatorX;
         const double verticalSpan =
             viewport.maxMercatorY - viewport.minMercatorY;
+        const bool pixelMode =
+            viewport.coordinateMode == QStringLiteral("pixel");
         const QRectF targetRectangle(
             (overlayViewport.minMercatorX - viewport.minMercatorX)
                 / horizontalSpan * width(),
-            (viewport.maxMercatorY - overlayViewport.maxMercatorY)
-                / verticalSpan * height(),
+            pixelMode
+                ? (overlayViewport.minMercatorY - viewport.minMercatorY)
+                      / verticalSpan * height()
+                : (viewport.maxMercatorY - overlayViewport.maxMercatorY)
+                      / verticalSpan * height(),
             (overlayViewport.maxMercatorX - overlayViewport.minMercatorX)
                 / horizontalSpan * width(),
             (overlayViewport.maxMercatorY - overlayViewport.minMercatorY)
@@ -618,6 +681,17 @@ void MapCanvas::paint(QPainter *painter)
 
 void MapCanvas::drawBaseMap(QPainter *painter)
 {
+    if (m_coordinateMode == QStringLiteral("pixel")) {
+        painter->fillRect(boundingRect(),
+                          QColor(QStringLiteral("#20252B")));
+        constexpr int gridSize = 32;
+        painter->setPen(QPen(QColor(255, 255, 255, 10), 1.0));
+        for (int x = 0; x < width(); x += gridSize)
+            painter->drawLine(x, 0, x, static_cast<int>(height()));
+        for (int y = 0; y < height(); y += gridSize)
+            painter->drawLine(0, y, static_cast<int>(width()), y);
+        return;
+    }
     const int tileZoom = std::clamp(
         static_cast<int>(std::floor(m_zoomLevel)), 0,
         maximumTileZoom(m_baseMap));
@@ -704,10 +778,16 @@ void MapCanvas::tileFinished(QNetworkReply *reply)
 
 void MapCanvas::zoomBy(double delta)
 {
-    const double nextZoom = std::clamp(m_zoomLevel + delta, 1.0, 20.0);
+    const double minimumZoom =
+        m_coordinateMode == QStringLiteral("pixel") ? -10.0 : 1.0;
+    const double nextZoom =
+        std::clamp(m_zoomLevel + delta, minimumZoom, 20.0);
     if (qFuzzyCompare(nextZoom, m_zoomLevel))
         return;
+    const double appliedDelta = nextZoom - m_zoomLevel;
     m_zoomLevel = nextZoom;
+    if (m_coordinateMode == QStringLiteral("pixel"))
+        m_pixelUnitsPerScreenPixel /= std::exp2(appliedDelta);
     emit viewportChanged();
     update();
     scheduleOverlayRender();
@@ -715,6 +795,14 @@ void MapCanvas::zoomBy(double delta)
 
 void MapCanvas::panBy(double horizontalPixels, double verticalPixels)
 {
+    if (m_coordinateMode == QStringLiteral("pixel")) {
+        m_pixelCenterX -= horizontalPixels * m_pixelUnitsPerScreenPixel;
+        m_pixelCenterY -= verticalPixels * m_pixelUnitsPerScreenPixel;
+        emit viewportChanged();
+        update();
+        scheduleOverlayRender();
+        return;
+    }
     const QPointF center = lonLatToWorld(m_centerLongitude, m_centerLatitude,
                                          m_zoomLevel);
     const QPointF coordinate = worldToLonLat(center.x() - horizontalPixels,
@@ -733,6 +821,20 @@ void MapCanvas::fitBounds(double minLon, double minLat, double maxLon, double ma
         || !std::isfinite(maxLon) || !std::isfinite(maxLat)
         || minLon > maxLon || minLat > maxLat
         || width() <= 0 || height() <= 0) {
+        return;
+    }
+    if (m_coordinateMode == QStringLiteral("pixel")) {
+        const double availableWidth = std::max(1.0, width() - 72.0);
+        const double availableHeight = std::max(1.0, height() - 72.0);
+        m_pixelCenterX = (minLon + maxLon) / 2.0;
+        m_pixelCenterY = (minLat + maxLat) / 2.0;
+        m_pixelUnitsPerScreenPixel = std::max(
+            1e-9, std::max((maxLon - minLon) / availableWidth,
+                           (maxLat - minLat) / availableHeight));
+        m_zoomLevel = 1.0;
+        emit viewportChanged();
+        update();
+        scheduleOverlayRender();
         return;
     }
     // 点图层或严格水平/垂直的线可能只有零宽或零高范围；为其补充一个
@@ -812,7 +914,8 @@ void MapCanvas::refresh()
 
 void MapCanvas::drawSelectedFeature(QPainter *painter) const
 {
-    if (m_selectedFeatureWkt.isEmpty())
+    if (m_coordinateMode == QStringLiteral("pixel")
+        || m_selectedFeatureWkt.isEmpty())
         return;
 
     const auto [geometry, error] =
@@ -1087,7 +1190,7 @@ RenderResult MapCanvas::renderLayers(QVector<LayerSnapshot> layers,
         for (auto iterator = layers.crbegin(); iterator != layers.crend();
              ++iterator) {
             const LayerSnapshot &layer = *iterator;
-            if (!layer.visible)
+            if (!layer.visible || layer.coordinateMode != viewport.coordinateMode)
                 continue;
             if (layer.type == QStringLiteral("vector")) {
                 const QString styleName = QStringLiteral("layer_style");
@@ -1149,7 +1252,8 @@ RenderResult MapCanvas::renderLayers(QVector<LayerSnapshot> layers,
             } else if (layer.type == QStringLiteral("raster")) {
                 const auto raster = renderRasterLayer(
                     layer,
-                    {viewport.width, viewport.height,
+                    {viewport.coordinateMode,
+                     viewport.width, viewport.height,
                      viewport.minMercatorX, viewport.minMercatorY,
                      viewport.maxMercatorX, viewport.maxMercatorY});
                 if (!raster.error.isEmpty() && result.error.isEmpty())

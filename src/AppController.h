@@ -2,6 +2,7 @@
 
 #include "AttributeTableModel.h"
 #include "LayerModel.h"
+#include "MultidimensionalDataset.h"
 
 #include <QObject>
 #include <QVariantList>
@@ -21,6 +22,14 @@ class AppController final : public QObject
     Q_PROPERTY(bool restartRequired READ restartRequired NOTIFY restartRequiredChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
     Q_PROPERTY(QString version READ version CONSTANT)
+    Q_PROPERTY(QVariantMap pendingMultidimensionalImport
+               READ pendingMultidimensionalImport
+               NOTIFY pendingMultidimensionalImportChanged)
+    Q_PROPERTY(QVariantMap multidimensionalDriverCapabilities
+               READ multidimensionalDriverCapabilities CONSTANT)
+    Q_PROPERTY(bool multidimensionalImportBusy
+               READ multidimensionalImportBusy
+               NOTIFY multidimensionalImportBusyChanged)
 
 public:
     explicit AppController(QObject *parent = nullptr);
@@ -35,6 +44,18 @@ public:
     bool restartRequired() const { return m_restartRequired; }
     QString statusMessage() const { return m_statusMessage; }
     QString version() const;
+    QVariantMap pendingMultidimensionalImport() const
+    {
+        return m_pendingMultidimensionalImport.toVariantMap();
+    }
+    QVariantMap multidimensionalDriverCapabilities() const
+    {
+        return MultidimensionalDatasetInspector::driverCapabilities();
+    }
+    bool multidimensionalImportBusy() const
+    {
+        return m_multidimensionalImportBusy;
+    }
 
     static QString savedOrPlatformStyle();
     static QString savedOrSystemLanguage();
@@ -53,6 +74,11 @@ public:
     Q_INVOKABLE QVariantMap queryVector(int row, double longitude, double latitude,
                                        double toleranceDegrees) const;
     Q_INVOKABLE QVariantMap layerMetadata(int row) const;
+    Q_INVOKABLE void confirmMultidimensionalImport(
+        int arrayIndex, int xDimension, int yDimension,
+        const QVariantList &sliceIndices, const QString &coordinateMode,
+        const QString &crs);
+    Q_INVOKABLE void cancelMultidimensionalImport();
 
 signals:
     void fontChanged();
@@ -63,13 +89,21 @@ signals:
     void statusMessageChanged();
     void layerAdded(double minLon, double minLat, double maxLon, double maxLat);
     void shortcutsChanged();
+    void pendingMultidimensionalImportChanged();
+    void multidimensionalImportBusyChanged();
+    void canvasModeRequested(const QString &mode, int width, int height);
 
 private:
     void loadDataset(const QString &path);
     void addVectorLayers(const QString &path, const QString &datasetId,
                          const QString &datasetName);
     void addRasterLayer(const QString &path, const QString &datasetId,
-                        const QString &datasetName);
+                        const QString &datasetName,
+                        const QString &sourceUri = {},
+                        const QString &layerName = {},
+                        const QString &coordinateMode = QStringLiteral("auto"),
+                        const QString &arrayFullName = {},
+                        const QString &sliceDescription = {});
     void setStatus(const QString &message);
 
     LayerModel m_layerModel;
@@ -81,4 +115,6 @@ private:
     double m_toolBarOpacity = 0.85;
     bool m_restartRequired = false;
     QString m_statusMessage;
+    MultidimensionalScanResult m_pendingMultidimensionalImport;
+    bool m_multidimensionalImportBusy = false;
 };

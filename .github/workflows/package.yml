@@ -25,7 +25,7 @@ on:
         required: true
         default: false
       release_tag:
-        description: Release tag for a manual publish, for example v1.0.1
+        description: Release tag for a manual publish, for example v2.0.0
         type: string
         required: false
   push:

@@ -7,7 +7,7 @@ if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
         "Minimum macOS version supported by GeoReader")
 endif()
 
-project(GeoReader VERSION 1.0.1 LANGUAGES CXX)
+project(GeoReader VERSION 2.0.0 LANGUAGES CXX)
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
@@ -234,6 +234,8 @@ qt_add_executable(GeoReader
     src/LayerModel.h
     src/MapCanvas.cpp
     src/MapCanvas.h
+    src/MultidimensionalDataset.cpp
+    src/MultidimensionalDataset.h
     src/RasterRenderer.cpp
     src/RasterRenderer.h
 )
@@ -286,6 +288,22 @@ if(GEOREADER_BUILD_TESTS)
     add_test(NAME GeoReaderInteractionTests COMMAND GeoReaderInteractionTests)
     set_tests_properties(GeoReaderInteractionTests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    qt_add_executable(GeoReaderMultidimensionalTests
+        tests/MultidimensionalDatasetTests.cpp
+        src/MultidimensionalDataset.cpp
+        src/MultidimensionalDataset.h
+        src/RasterRenderer.cpp
+        src/RasterRenderer.h
+    )
+    target_include_directories(GeoReaderMultidimensionalTests PRIVATE src)
+    target_link_libraries(GeoReaderMultidimensionalTests PRIVATE
+        Qt6::Core
+        Qt6::Gui
+        GDAL::GDAL
+    )
+    add_test(NAME GeoReaderMultidimensionalTests
+             COMMAND GeoReaderMultidimensionalTests)
 endif()
 
 qt_add_qml_module(GeoReader

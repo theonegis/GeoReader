@@ -11,17 +11,23 @@ struct LayerSnapshot
     QString datasetName;
     QString name;
     QString path;
+    QString sourceUri;
     QString sourceLayer;
     QString type;
     QString geometryType;
     QString srs;
     QString crsLabel;
+    QString coordinateMode = QStringLiteral("geographic");
+    QString multidimensionalArray;
+    QString multidimensionalSlice;
     bool visible = true;
     double opacity = 1.0;
     QColor lineColor = QColor(QStringLiteral("#1976D2"));
     QColor fillColor = QColor(QStringLiteral("#64B5F6"));
     double lineWidth = 1.5;
     int bandCount = 0;
+    int pixelWidth = 0;
+    int pixelHeight = 0;
     int redBand = 1;
     int greenBand = 2;
     int blueBand = 3;
@@ -75,7 +81,10 @@ public:
         NoDataValueRole,
         CrsRole,
         DatasetIdRole,
-        DatasetNameRole
+        DatasetNameRole,
+        CoordinateModeRole,
+        MultidimensionalArrayRole,
+        MultidimensionalSliceRole
     };
     Q_ENUM(Role)
 

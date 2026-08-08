@@ -18,6 +18,7 @@ class QNetworkReply;
 
 struct MapViewport
 {
+    QString coordinateMode = QStringLiteral("geographic");
     int width = 0;
     int height = 0;
     double minMercatorX = 0.0;
@@ -59,6 +60,8 @@ class MapCanvas : public QQuickPaintedItem
                NOTIFY baseMapChanged)
     Q_PROPERTY(QString baseMapAttribution READ baseMapAttribution
                NOTIFY baseMapChanged)
+    Q_PROPERTY(QString coordinateMode READ coordinateMode
+               NOTIFY coordinateModeChanged)
 
 public:
     explicit MapCanvas(QQuickItem *parent = nullptr);
@@ -78,6 +81,7 @@ public:
     QString inspectionMode() const { return m_inspectionMode; }
     QString baseMap() const { return m_baseMap; }
     QString baseMapAttribution() const;
+    QString coordinateMode() const { return m_coordinateMode; }
 
     Q_INVOKABLE void zoomBy(double delta);
     Q_INVOKABLE void panBy(double horizontalPixels, double verticalPixels);
@@ -86,6 +90,9 @@ public:
     Q_INVOKABLE void setRectangleZoomActive(bool active);
     Q_INVOKABLE void setInspectionMode(const QString &mode);
     Q_INVOKABLE void setBaseMap(const QString &baseMap);
+    Q_INVOKABLE void setCoordinateMode(const QString &mode,
+                                       int pixelWidth = 0,
+                                       int pixelHeight = 0);
     Q_INVOKABLE void setSelectedFeatureWkt(const QString &wkt);
     Q_INVOKABLE void clearSelectedFeature();
     Q_INVOKABLE void refresh();
@@ -98,6 +105,7 @@ signals:
     void rectangleZoomActiveChanged();
     void inspectionModeChanged();
     void baseMapChanged();
+    void coordinateModeChanged();
     void mapClicked(double longitude, double latitude);
     void renderError(const QString &message);
 
@@ -154,4 +162,8 @@ private:
     bool m_rendering = false;
     QString m_inspectionMode = QStringLiteral("pan");
     QString m_baseMap = QStringLiteral("osm");
+    QString m_coordinateMode = QStringLiteral("geographic");
+    double m_pixelCenterX = 0.0;
+    double m_pixelCenterY = 0.0;
+    double m_pixelUnitsPerScreenPixel = 1.0;
 };

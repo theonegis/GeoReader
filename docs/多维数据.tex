@@ -1,0 +1,182 @@
+\documentclass[UTF8,fontset=fandol,11pt]{ctexart}
+
+\usepackage[a4paper,margin=2.35cm]{geometry}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{xcolor}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!55!black,
+  urlcolor=blue!55!black,
+  pdftitle={GeoReader 多维数据支持设计与实施方案}
+}
+\setlist{nosep,leftmargin=2em}
+\renewcommand{\arraystretch}{1.22}
+
+\title{GeoReader 多维数据支持设计与实施方案}
+\author{西北大学谭振宇团队}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{目标与范围}
+
+GeoReader 在现有 Shapefile、GeoJSON、GeoPackage 和 GeoTIFF 浏览能力的基础上，增加
+NetCDF、HDF5 和 HDF4 容器数据的读取与可视化。实现以 GDAL 多维栅格 API 为统一入口，
+不针对每一种科学数据格式分别维护解析器。一个物理文件作为一个“数据”节点，用户选择的
+多个变量作为它的子图层，从而与现有图层管理中的数据---图层层次保持一致。
+
+第一阶段面向浏览与基本可视化，不实现数据编辑、复杂科学计算和任意网格重建。源数据始终
+只读，切片、坐标解释、重投影和渲染参数保存在 GeoReader 图层描述中，不回写源文件。
+
+\section{坐标判定原则}
+
+GeoReader 不根据数值范围猜测坐标参考系。例如，$[-180,180]$ 和 $[-90,90]$ 只能作为候选
+提示，不能据此断定数据是经纬度。坐标解释按下列优先级处理：
+
+\begin{enumerate}
+  \item 数据变量自身具有有效 GeoTransform 与 CRS：直接作为地理栅格加载；
+  \item 存在符合 CF 约定的坐标变量、\texttt{grid\_mapping} 或 GDAL 可识别的空间参考：
+        自动预选 X、Y 与 CRS，并允许用户复核；
+  \item 存在一维 X/Y 坐标变量：用户选择 X、Y。等间距坐标构造仿射变换；非等间距坐标
+        使用地理定位数组或重采样；
+  \item 存在二维经纬度坐标数组：作为曲线网格处理，通过地理定位数组生成显示用的
+        EPSG:3857 视图；
+  \item 没有可用坐标：进入像素模式。清空并隐藏网络底图，横纵坐标显示为列、行索引，
+        数据仍可平移、缩放、查询像素值和调整色带。
+\end{enumerate}
+
+若用户选择的是投影坐标，必须同时指定或确认源 CRS；GeoReader 在渲染时按需转换到地图
+画布的 EPSG:3857。若选择的是经纬度坐标，通常使用 EPSG:4326，但仍优先采用文件中明确
+声明的 CRS。任何转换都只生成临时显示视图，不修改原始坐标或科学变量。
+
+\section{导入交互}
+
+打开多维容器后显示居中的非模态导入面板。面板包含：
+
+\begin{itemize}
+  \item 数据变量：列出数值型、至少二维且可由 GDAL 读取的数组；
+  \item X/Y 维与坐标变量：自动预选，允许用户交换 X/Y、翻转方向；
+  \item 额外维切片：时间、高度、深度、情景等维度逐行显示，默认索引为 0；
+  \item 坐标模式：自动、地理坐标、投影坐标、像素坐标；
+  \item CRS：显示识别结果，投影坐标模式下若缺失则必须由用户填写；
+  \item 显示参数：单波段色带、拉伸、最小值、最大值、NoData 与透明度；
+  \item “添加图层”：同一文件可以重复选择变量或切片，新增为同一数据节点下的子图层。
+\end{itemize}
+
+导入面板必须显示变量完整路径、数据类型、单位、维度名称与长度。默认选择只是一种建议，
+最终采用的 X/Y、切片和 CRS 必须在图层元数据面板中可追溯。
+
+\section{软件架构}
+
+\begin{longtable}{p{0.25\textwidth}p{0.67\textwidth}}
+\toprule
+组件 & 职责 \\
+\midrule
+\endhead
+\texttt{MultidimensionalDatasetInspector} &
+以 RAII 方式打开 GDAL 多维数据集，递归扫描 Group 与 MDArray，提取变量、维度、坐标变量、
+类型、单位、NoData、空间参考及格式驱动能力。\\
+\texttt{MultidimensionalImportSpec} &
+不可变值对象，保存物理文件、数组全名、X/Y 维、坐标数组、额外维切片、坐标模式、CRS、
+轴翻转和显示参数。\\
+\texttt{LayerSnapshot} &
+扩展源 URI、多维导入描述和画布坐标模式；同一物理文件产生的图层共享 \texttt{datasetId}。\\
+\texttt{RasterRenderer} &
+根据当前视口创建低成本显示视图。地理模式按需重投影到 EPSG:3857；像素模式直接按窗口读取
+数组子区；使用 GDAL 块缓存、概览和后台任务降低首屏延迟。\\
+\texttt{MapCanvas} &
+在地理模式显示底图与空间图层，在像素模式显示中性背景与数组图层；两种模式共享平移、缩放、
+矩形缩放、像素查询和异步重绘调度。\\
+Qt Quick 导入面板 &
+显示变量、坐标、切片与 CRS 选择；只负责编辑导入描述，不直接持有 GDAL 资源。\\
+\bottomrule
+\end{longtable}
+
+所有 GDAL 对象使用带自定义 deleter 的智能指针或 GDAL 提供的共享对象，跨线程传递值对象而
+非裸指针。扫描、统计和渲染不阻塞 GUI 线程；取消旧视口任务后，仅提交最新一帧。
+
+\section{渲染与性能策略}
+
+\begin{enumerate}
+  \item 首屏只读取与画布像素规模相匹配的数据，不读取完整数组；
+  \item 优先使用源数据已有 overview/chunk，并让 GDAL 选择最接近的分辨率；
+  \item 对没有概览的超大数组使用会话级临时 VRT/概览缓存，不改变源文件；
+  \item 色带、最小最大值和 NoData 变化尽量复用已读取的标量块，只重新着色；
+  \item 时间或深度切片变化使数据块缓存失效，但保留元数据与坐标变换缓存；
+  \item 鼠标移动的像素查询进行节流，并从当前缓存块读取；缓存未命中时执行最小窗口读取；
+  \item 曲线网格首次建立地理定位变换可能较慢，界面显示可取消的进度状态并缓存结果。
+\end{enumerate}
+
+缓存键至少包含文件身份、数组全名、切片、坐标解释、目标 CRS、视口、分辨率与重采样方式，
+防止不同变量或切片错误复用图像。
+
+\section{格式与驱动能力}
+
+格式支持采用运行时能力检测而不是编译期假设。应用启动时查询 GDAL 驱动管理器，并在设置或
+导入错误中报告实际可用状态。
+
+\begin{tabularx}{\textwidth}{lXX}
+\toprule
+格式 & 预期入口 & 不可用时的行为 \\
+\midrule
+NetCDF & GDAL netCDF 多维驱动 & 提示当前安装包缺少 netCDF 驱动与重新安装方法 \\
+HDF5 & GDAL HDF5 多维驱动 & 提示当前安装包缺少 HDF5 驱动与重新安装方法 \\
+HDF4 & GDAL HDF4/HDF4Image 驱动 & 明确提示 HDF4 为可选能力；不把文件误报为损坏 \\
+\bottomrule
+\end{tabularx}
+
+当前 Homebrew 环境的 GDAL 可读取 NetCDF 与 HDF5，但不提供 HDF4 驱动。因此代码必须完整
+实现 HDF4 检测和错误说明；跨平台发布若要承诺 HDF4，需在 CI 中使用包含 HDF4 的自定义
+GDAL 构建，并增加真实样例冒烟测试。
+
+\section{异常处理与安全性}
+
+\begin{itemize}
+  \item 文件可打开但没有可视化数组时，显示驱动名及扫描到的 Group，不创建空图层；
+  \item 数组维度少于二、类型不可转换或切片越界时，在导入面板就地说明原因；
+  \item 投影坐标缺少 CRS 时禁止按地理图层导入，但允许用户切换到像素模式；
+  \item 坐标长度与数据维不匹配、坐标非单调或包含无效值时，不静默构造 GeoTransform；
+  \item 一个图层失败不移除同一数据节点下已经成功加载的其他图层；
+  \item 错误消息包含文件、数组全名和 GDAL 最后一条错误，便于复现。
+\end{itemize}
+
+\section{分阶段实施与验收}
+
+\subsection*{阶段一：扫描与规则网格闭环}
+实现驱动检测、变量/维度扫描、导入面板、额外维切片、规则经纬度/投影网格和像素模式。
+使用 NetCDF 与 HDF5 的二维、三维样例验证；同一文件的多个变量必须归入同一数据节点。
+
+\subsection*{阶段二：曲线网格与性能}
+实现二维经纬度地理定位数组、后台 Warp、取消任务、块缓存与临时概览。验证缩放时分辨率随
+级别变化、色带调整不重复读取完整数据、鼠标像素值实时更新。
+
+\subsection*{阶段三：发布依赖与回归}
+为 macOS Intel/Apple Silicon、Windows x64 和 Linux 安装包执行驱动矩阵检查。HDF4 只有在
+安装包内驱动与真实文件测试均通过后才标记为支持。
+
+完成标准如下：
+\begin{enumerate}
+  \item 有地理参考的数据与 OSM 正确叠加，投影坐标转换后位置正确；
+  \item 无坐标数据自动进入像素模式且底图为空，不伪造经纬度；
+  \item 变量、切片、X/Y、CRS 和 NoData 均可回看并可重新配置；
+  \item 大数组首屏按视口读取，GUI 无长时间冻结，过期渲染任务不会覆盖最新视口；
+  \item 缺失格式驱动时给出准确、可操作的提示，不崩溃、不误判源文件损坏。
+\end{enumerate}
+
+\section{参考规范}
+
+\begin{itemize}
+  \item GDAL Multidimensional Raster Data Model：\url{https://gdal.org/en/stable/user/multidim_raster_data_model.html}
+  \item GDAL netCDF Driver：\url{https://gdal.org/en/stable/drivers/raster/netcdf.html}
+  \item GDAL HDF5 Driver：\url{https://gdal.org/en/stable/drivers/raster/hdf5.html}
+  \item GDAL HDF4 Driver：\url{https://gdal.org/en/stable/drivers/raster/hdf4.html}
+  \item CF Metadata Conventions 1.11：\url{https://cfconventions.org/Data/cf-conventions/cf-conventions-1.11/cf-conventions.html}
+\end{itemize}
+
+\end{document}

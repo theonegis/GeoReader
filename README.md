@@ -558,7 +558,7 @@ CI 使用仓库内的 Release-only vcpkg triplet，避免为 GDAL、Mapnik
 
 若一次构建只有部分平台失败，成功 job 上传的 artifact 仍可复用。例如
 运行 `30533107514` 已成功生成两个 macOS DMG，只需重新构建 Windows
-和 Linux，并将新旧产物合并发布为 `v1.0.1`：
+和 Linux，并将新旧产物合并发布为 `v2.0.0`：
 
 ```bash
 gh workflow run package.yml \
@@ -566,7 +566,7 @@ gh workflow run package.yml \
   -f build_target=windows-linux \
   -f reuse_run_id=30533107514 \
   -f publish_release=true \
-  -f release_tag=v1.0.1
+  -f release_tag=v2.0.0
 ```
 
 `reuse_run_id` 必须来自同一仓库且 artifact 尚未过期。发布 job 会再次
@@ -577,8 +577,8 @@ gh workflow run package.yml \
 `vcpkg.json` 中的 `version-string`，然后创建标签：
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v2.0.0
+git push origin v2.0.0
 ```
 
 ## 运行时检查

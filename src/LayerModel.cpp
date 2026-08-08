@@ -64,6 +64,9 @@ QVariant LayerModel::data(const QModelIndex &index, int role) const
                                                   : layer.crsLabel;
     case DatasetIdRole: return layer.datasetId;
     case DatasetNameRole: return layer.datasetName;
+    case CoordinateModeRole: return layer.coordinateMode;
+    case MultidimensionalArrayRole: return layer.multidimensionalArray;
+    case MultidimensionalSliceRole: return layer.multidimensionalSlice;
     default: return {};
     }
 }
@@ -133,7 +136,10 @@ QHash<int, QByteArray> LayerModel::roleNames() const
         {NoDataValueRole, "noDataValue"},
         {CrsRole, "crs"},
         {DatasetIdRole, "datasetId"},
-        {DatasetNameRole, "datasetName"}
+        {DatasetNameRole, "datasetName"},
+        {CoordinateModeRole, "coordinateMode"},
+        {MultidimensionalArrayRole, "multidimensionalArray"},
+        {MultidimensionalSliceRole, "multidimensionalSlice"}
     };
 }
 

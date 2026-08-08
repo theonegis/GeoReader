@@ -7,6 +7,7 @@
 
 struct RasterRenderViewport
 {
+    QString coordinateMode = QStringLiteral("geographic");
     int width = 0;
     int height = 0;
     double minMercatorX = 0.0;
