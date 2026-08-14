@@ -90,25 +90,38 @@ ApplicationWindow {
         return Math.abs(value).toFixed(5) + "° " + (value < 0 ? "S" : "N")
     }
 
-    function remappedIndex(current, from, to) {
-        if (current === from)
-            return to
-        if (from < to && current > from && current <= to)
-            return current - 1
-        if (to < from && current >= to && current < from)
-            return current + 1
-        return current
-    }
-
-    function moveLayer(from, to) {
+    function moveLayerById(sourceLayerId, targetLayerId) {
+        const from = app.layerModel.indexOfLayer(sourceLayerId)
+        const to = app.layerModel.indexOfLayer(targetLayerId)
         if (from === to || from < 0 || to < 0)
             return
-        // 模型行移动后同步重映射两个选择索引，防止编辑器或识别工具指向
-        // 另一个图层。
-        selectedLayer = remappedIndex(selectedLayer, from, to)
-        selectedVectorLayer = remappedIndex(selectedVectorLayer, from, to)
-        app.layerModel.moveLayer(from, to)
+
+        // 行号会随模型移动改变，因此先保存当前选择的稳定 ID，移动完成后
+        // 再重新解析行号，防止编辑器或识别工具指向另一个图层。
+        const selectedId = selectedLayer >= 0
+                ? app.layerModel.get(selectedLayer).layerId : ""
+        const selectedVectorId = selectedVectorLayer >= 0
+                ? app.layerModel.get(selectedVectorLayer).layerId : ""
+        const source = app.layerModel.get(from)
+        const target = app.layerModel.get(to)
+        if (source.datasetId === target.datasetId)
+            app.layerModel.moveLayerById(sourceLayerId, targetLayerId)
+        else
+            app.layerModel.moveDataset(source.datasetId, target.datasetId)
+
+        selectedLayer = selectedId
+                ? app.layerModel.indexOfLayer(selectedId) : -1
+        selectedVectorLayer = selectedVectorId
+                ? app.layerModel.indexOfLayer(selectedVectorId) : -1
         layerList.currentIndex = selectedLayer
+        // beginMoveRows/endMoveRows 与动态编辑器高度同时变化时，ListView
+        // 可能暂时保留旧 delegate 的占位高度。下一帧强制重新布局，确保
+        // 重排后的数据卡片始终连续紧邻。
+        Qt.callLater(function() {
+            layerList.forceLayout()
+            if (selectedLayer >= 0)
+                layerList.positionViewAtIndex(selectedLayer, ListView.Contain)
+        })
     }
 
     function zoomToLayer(row) {
@@ -276,6 +289,12 @@ ApplicationWindow {
         objectName: "mapCanvas"
         anchors.fill: parent
         layerModel: app.layerModel
+        // 滚轮缩放只能发生在地图区域。浮动面板自身继续接收滚轮，
+        // ListView/ScrollView 因此可以正常滚动而不会穿透到地图。
+        wheelZoomEnabled: !(layerPanel.containsPointer
+                            || rasterPanel.containsPointer
+                            || vectorPanel.containsPointer
+                            || settingsPanel.containsPointer)
 
         onMapClicked: function(longitude, latitude) {
             if (window.activePanel === "vector")
@@ -622,6 +641,64 @@ ApplicationWindow {
 
             ListView {
                 id: layerList
+                property string reorderSourceLayerId: ""
+                property string reorderTargetLayerId: ""
+                property bool reorderGuardActive: false
+
+                function beginReorder(layerId) {
+                    // 模型移动后，原 delegate 可能在同一次指针序列内被复用。
+                    // 防护窗口内忽略随后出现的伪第二次拖拽。
+                    if (reorderGuardActive)
+                        return
+                    reorderSourceLayerId = layerId
+                    reorderTargetLayerId = layerId
+                    interactive = false
+                }
+
+                function updateReorderTarget(contentY) {
+                    let nearestLayerId = reorderSourceLayerId
+                    let nearestDistance = Number.POSITIVE_INFINITY
+                    for (let row = 0; row < count; ++row) {
+                        const item = itemAtIndex(row)
+                        if (!item || !item.visible || item.height <= 0)
+                            continue
+                        const distance = Math.abs(
+                                    contentY - item.y - item.height / 2)
+                        if (distance < nearestDistance) {
+                            nearestDistance = distance
+                            nearestLayerId = item.layerId
+                        }
+                    }
+                    reorderTargetLayerId = nearestLayerId
+                }
+
+                function finishReorder() {
+                    const sourceLayerId = reorderSourceLayerId
+                    const targetLayerId = reorderTargetLayerId
+                    reorderSourceLayerId = ""
+                    reorderTargetLayerId = ""
+                    interactive = true
+                    if (sourceLayerId && targetLayerId
+                            && sourceLayerId !== targetLayerId) {
+                        reorderGuardActive = true
+                        window.moveLayerById(sourceLayerId, targetLayerId)
+                        reorderGuardTimer.restart()
+                    }
+                }
+
+                function cancelReorder() {
+                    reorderSourceLayerId = ""
+                    reorderTargetLayerId = ""
+                    interactive = true
+                }
+
+                Timer {
+                    id: reorderGuardTimer
+                    interval: 180
+                    repeat: false
+                    onTriggered: layerList.reorderGuardActive = false
+                }
+
                 Layout.row: 0
                 Layout.fillWidth: true
                 Layout.fillHeight: true
@@ -638,7 +715,13 @@ ApplicationWindow {
                     id: datasetHeader
                     required property string section
                     width: ListView.view.width
-                    height: 62
+                    height: multiLayer ? 62 : 0
+                    visible: multiLayer
+                    enabled: multiLayer
+                    // ListView 会自行更新 section delegate 的 visible；当单图层
+                    // 数据把标题压缩为零高度时，必须裁剪子项，避免标题内容越界
+                    // 绘制到合并后的数据/图层卡片上。
+                    clip: true
                     readonly property bool expanded:
                         window.datasetIsExpanded(section)
 
@@ -648,6 +731,8 @@ ApplicationWindow {
                         const modelRevision = app.layerModel.revision
                         return app.layerModel.datasetInfo(section)
                     }
+                    readonly property bool multiLayer:
+                        (info.layerCount || 0) > 1
 
                     Rectangle {
                         id: datasetHeaderBackground
@@ -782,6 +867,7 @@ ApplicationWindow {
                 delegate: Rectangle {
                     id: layerDelegate
                     required property int index
+                    required property string layerId
                     required property string datasetId
                     required property string datasetName
                     required property string name
@@ -807,19 +893,20 @@ ApplicationWindow {
                     required property string noDataValue
                     required property string crs
 
-                    Drag.active: reorderHandler.active
-                    Drag.source: layerDelegate
-                    Drag.hotSpot.x: width / 2
-                    Drag.hotSpot.y: 30
                     z: reorderHandler.active ? 20 : 0
                     opacity: reorderHandler.active ? .88 : 1
+                    transform: Translate {
+                        y: reorderHandler.active
+                           ? reorderHandler.activeTranslation.y : 0
+                    }
 
                     property var groupInfo: {
                         const modelRevision = app.layerModel.revision
                         return app.layerModel.datasetInfo(datasetId)
                     }
                     readonly property bool datasetExpanded:
-                        window.datasetIsExpanded(datasetId)
+                        groupInfo.layerCount <= 1
+                        || window.datasetIsExpanded(datasetId)
                     readonly property bool isLastInDataset:
                         index === groupInfo.firstRow + groupInfo.layerCount - 1
 
@@ -871,10 +958,6 @@ ApplicationWindow {
                     color: window.datasetTint()
                     clip: true
 
-                    Behavior on height {
-                        NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
-                    }
-
                     Rectangle {
                         id: layerCard
                         anchors.left: parent.left
@@ -891,10 +974,17 @@ ApplicationWindow {
                                          palette.highlight.b, .13)
                                : Qt.rgba(palette.window.r, palette.window.g,
                                          palette.window.b, .72)
-                        border.width: layerDelegate.ListView.isCurrentItem ? 1 : 0
-                        border.color: Qt.rgba(palette.highlight.r,
-                                              palette.highlight.g,
-                                              palette.highlight.b, .28)
+                        border.width:
+                            layerList.reorderTargetLayerId
+                                === layerDelegate.layerId ? 1
+                              : (layerDelegate.ListView.isCurrentItem ? 1 : 0)
+                        border.color:
+                            layerList.reorderTargetLayerId
+                                === layerDelegate.layerId
+                            ? palette.highlight
+                            : Qt.rgba(palette.highlight.r,
+                                      palette.highlight.g,
+                                      palette.highlight.b, .28)
                     }
 
                     Item {
@@ -986,9 +1076,35 @@ ApplicationWindow {
                             Behavior on rotation { NumberAnimation { duration: 140 } }
                         }
 
+                        ToolButton {
+                            id: removeSingleLayerDatasetButton
+                            anchors.right: chevron.left
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: layerDelegate.groupInfo.layerCount === 1
+                            width: visible ? 34 : 0
+                            height: 34
+                            contentItem: AppIcon {
+                                width: 18
+                                height: 18
+                                name: "trash"
+                                color: removeSingleLayerDatasetButton.hovered
+                                       ? "#D94A4A" : palette.mid
+                            }
+                            onClicked: {
+                                app.layerModel.removeDataset(
+                                            layerDelegate.datasetId)
+                                window.selectedLayer = -1
+                                window.selectedVectorLayer = -1
+                                window.vectorResult = ({})
+                                mapCanvas.clearSelectedFeature()
+                            }
+                            ToolTip.visible: hovered
+                            ToolTip.text: qsTr("移除整个数据")
+                        }
+
                         Item {
                             id: reorderGrip
-                            anchors.right: chevron.left
+                            anchors.right: removeSingleLayerDatasetButton.left
                             anchors.rightMargin: 3
                             anchors.verticalCenter: parent.verticalCenter
                             width: 24
@@ -1011,15 +1127,31 @@ ApplicationWindow {
 
                             DragHandler {
                                 id: reorderHandler
-                                target: layerDelegate
+                                // ListView 拥有 delegate 的布局位置；仅使用视觉
+                                // transform，避免拖拽与模型重排同时写入 y 坐标。
+                                target: null
                                 xAxis.enabled: false
-                                onActiveChanged: {
-                                    layerList.interactive = !active
+                                onActiveTranslationChanged: {
+                                    if (active) {
+                                        layerList.updateReorderTarget(
+                                            layerDelegate.y
+                                            + layerDelegate.height / 2
+                                            + activeTranslation.y)
+                                    }
                                 }
+                                onActiveChanged: {
+                                    if (active) {
+                                        layerList.beginReorder(
+                                                    layerDelegate.layerId)
+                                    } else {
+                                        layerList.finishReorder()
+                                    }
+                                }
+                                onCanceled: layerList.cancelReorder()
                             }
 
                             ToolTip.visible: gripHover.hovered
-                            ToolTip.text: qsTr("在当前数据内拖动调整图层顺序")
+                            ToolTip.text: qsTr("拖动调整图层或数据顺序")
                             HoverHandler { id: gripHover }
                         }
 
@@ -1070,27 +1202,6 @@ ApplicationWindow {
                             text: qsTr("元信息")
                             onTriggered:
                                 window.showMetadata(layerDelegate.index)
-                        }
-                    }
-
-                    DropArea {
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        anchors.topMargin: 3
-                        anchors.bottom: parent.bottom
-                        anchors.bottomMargin:
-                            layerDelegate.isLastInDataset ? 8 : 3
-                        onEntered: function(drag) {
-                            if (drag.source
-                                    && drag.source !== layerDelegate
-                                    && drag.source.datasetId
-                                       === layerDelegate.datasetId
-                                    && drag.source.index
-                                       !== layerDelegate.index) {
-                                window.moveLayer(drag.source.index,
-                                                 layerDelegate.index)
-                            }
                         }
                     }
 

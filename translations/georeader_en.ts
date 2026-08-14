@@ -344,200 +344,205 @@ NoData: %1</translation>
         <translation>Band %1</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="344"/>
+        <location filename="../qml/Main.qml" line="349"/>
         <source>打开文件 (%1)</source>
         <translation>Open Files (%1)</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="349"/>
+        <location filename="../qml/Main.qml" line="354"/>
         <source>图层管理</source>
         <translation>Layers</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="355"/>
+        <location filename="../qml/Main.qml" line="360"/>
         <source>栅格值查看</source>
         <translation>Identify Raster Values</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="361"/>
+        <location filename="../qml/Main.qml" line="366"/>
         <source>矢量属性查看</source>
         <translation>Identify Vector Features</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="372"/>
-        <location filename="../qml/Main.qml" line="1806"/>
+        <location filename="../qml/Main.qml" line="377"/>
+        <location filename="../qml/Main.qml" line="1856"/>
         <source>设置</source>
         <translation>Settings</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="402"/>
-        <location filename="../qml/Main.qml" line="1922"/>
+        <location filename="../qml/Main.qml" line="407"/>
+        <location filename="../qml/Main.qml" line="1972"/>
         <source>放大</source>
         <translation>Zoom In</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="421"/>
-        <location filename="../qml/Main.qml" line="1923"/>
+        <location filename="../qml/Main.qml" line="426"/>
+        <location filename="../qml/Main.qml" line="1973"/>
         <source>缩小</source>
         <translation>Zoom Out</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="449"/>
+        <location filename="../qml/Main.qml" line="454"/>
         <source>矩形框选缩放（Esc 取消）</source>
         <translation>Zoom to Rectangle (Esc to cancel)</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="462"/>
+        <location filename="../qml/Main.qml" line="467"/>
         <source>图层</source>
         <translation>Layers</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="464"/>
+        <location filename="../qml/Main.qml" line="469"/>
         <source>尚未加载空间数据</source>
         <translation>No spatial data loaded</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="963"/>
+        <location filename="../qml/Main.qml" line="1013"/>
         <source>栅格 · %1 波段</source>
         <translation>Raster · %1 bands</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="964"/>
+        <location filename="../qml/Main.qml" line="1014"/>
         <source>矢量 · %1</source>
         <translation>Vector · %1</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="966"/>
+        <location filename="../qml/Main.qml" line="1016"/>
         <source>点</source>
         <translation>Point</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="968"/>
+        <location filename="../qml/Main.qml" line="1018"/>
         <source>面</source>
         <translation>Polygon</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="968"/>
+        <location filename="../qml/Main.qml" line="1018"/>
         <source>线</source>
         <translation>Line</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1110"/>
+        <location filename="../qml/Main.qml" line="1078"/>
+        <source>拖动调整图层或数据顺序</source>
+        <translation>Drag to reorder a layer or dataset</translation>
+    </message>
+    <message>
+        <location filename="../qml/Main.qml" line="1160"/>
         <source>不透明度</source>
         <translation>Opacity</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1134"/>
+        <location filename="../qml/Main.qml" line="1184"/>
         <source>线色</source>
         <translation>Stroke</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1157"/>
+        <location filename="../qml/Main.qml" line="1207"/>
         <source>点色</source>
         <translation>Point color</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1157"/>
+        <location filename="../qml/Main.qml" line="1207"/>
         <source>填充</source>
         <translation>Fill</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1186"/>
+        <location filename="../qml/Main.qml" line="1236"/>
         <source>线宽</source>
         <translation>Width</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1376"/>
+        <location filename="../qml/Main.qml" line="1426"/>
         <source>波段</source>
         <translation>Band</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1357"/>
+        <location filename="../qml/Main.qml" line="1407"/>
         <source>反向</source>
         <translation>Reverse</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1381"/>
+        <location filename="../qml/Main.qml" line="1431"/>
         <source>最小值</source>
         <translation>Minimum</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1386"/>
+        <location filename="../qml/Main.qml" line="1436"/>
         <source>最大值</source>
         <translation>Maximum</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1520"/>
+        <location filename="../qml/Main.qml" line="1570"/>
         <source>范围</source>
         <translation>Range</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1563"/>
+        <location filename="../qml/Main.qml" line="1613"/>
         <source>NoData 透明</source>
         <translation>Transparent NoData</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1578"/>
+        <location filename="../qml/Main.qml" line="1628"/>
         <source>可输入 nan 或数值</source>
         <translation>Enter nan or a numeric value</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1208"/>
+        <location filename="../qml/Main.qml" line="1258"/>
         <source>拉伸方式</source>
         <translation>Stretch method</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1218"/>
+        <location filename="../qml/Main.qml" line="1268"/>
         <source>最小值–最大值</source>
         <translation>Minimum–Maximum</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1222"/>
+        <location filename="../qml/Main.qml" line="1272"/>
         <source>2%–98% 累计裁剪</source>
         <translation>2%–98% Cumulative Cut</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1226"/>
+        <location filename="../qml/Main.qml" line="1276"/>
         <source>均值 ±2σ</source>
         <translation>Mean ±2σ</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1230"/>
+        <location filename="../qml/Main.qml" line="1280"/>
         <source>直方图均衡化</source>
         <translation>Histogram Equalization</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1255"/>
+        <location filename="../qml/Main.qml" line="1305"/>
         <source>RGB 波段</source>
         <translation>RGB Bands</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1268"/>
+        <location filename="../qml/Main.qml" line="1318"/>
         <source>红色通道</source>
         <translation>Red channel</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1295"/>
+        <location filename="../qml/Main.qml" line="1345"/>
         <source>绿色通道</source>
         <translation>Green channel</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1322"/>
+        <location filename="../qml/Main.qml" line="1372"/>
         <source>蓝色通道</source>
         <translation>Blue channel</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1345"/>
+        <location filename="../qml/Main.qml" line="1395"/>
         <source>色带</source>
         <translation>Color ramp</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1372"/>
+        <location filename="../qml/Main.qml" line="1422"/>
         <source>手动范围</source>
         <translation>Manual range</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1070"/>
+        <location filename="../qml/Main.qml" line="1126"/>
         <source>元信息</source>
         <translation>Metadata</translation>
     </message>
@@ -557,358 +562,353 @@ NoData: %1</translation>
         <translation>OpenTopoMap Topographic</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="465"/>
+        <location filename="../qml/Main.qml" line="470"/>
         <source>%1 个数据 · %2 个图层</source>
         <translation>%1 dataset(s) · %2 layer(s)</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="536"/>
+        <location filename="../qml/Main.qml" line="541"/>
         <source>底图</source>
         <translation>Basemaps</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="571"/>
+        <location filename="../qml/Main.qml" line="576"/>
         <source>折叠底图</source>
         <translation>Collapse Basemaps</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="571"/>
+        <location filename="../qml/Main.qml" line="576"/>
         <source>展开底图</source>
         <translation>Expand Basemaps</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="687"/>
+        <location filename="../qml/Main.qml" line="725"/>
         <source>显示或隐藏整个数据</source>
         <translation>Show or hide the entire dataset</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="714"/>
+        <location filename="../qml/Main.qml" line="752"/>
         <source>未命名数据</source>
         <translation>Unnamed dataset</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="725"/>
+        <location filename="../qml/Main.qml" line="763"/>
         <source>%1 个图层</source>
         <translation>%1 layer(s)</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="754"/>
+        <location filename="../qml/Main.qml" line="792"/>
         <source>折叠图层</source>
         <translation>Collapse layers</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="754"/>
+        <location filename="../qml/Main.qml" line="792"/>
         <source>展开图层</source>
         <translation>Expand layers</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="778"/>
+        <location filename="../qml/Main.qml" line="816"/>
         <source>移除整个数据</source>
         <translation>Remove entire dataset</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1022"/>
-        <source>在当前数据内拖动调整图层顺序</source>
-        <translation>Drag to reorder layers within this dataset</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1058"/>
+        <location filename="../qml/Main.qml" line="1114"/>
         <source>缩放至图层</source>
         <translation>Zoom to Layer</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1064"/>
+        <location filename="../qml/Main.qml" line="1120"/>
         <source>打开属性表</source>
         <translation>Open Attribute Table</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1590"/>
+        <location filename="../qml/Main.qml" line="1640"/>
         <source>点击左侧打开按钮添加数据</source>
         <translation>Use the Open button on the left to add data</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1607"/>
+        <location filename="../qml/Main.qml" line="1657"/>
         <source>栅格值</source>
         <translation>Raster Values</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1608"/>
+        <location filename="../qml/Main.qml" line="1658"/>
         <source>移动鼠标，实时读取所有可见栅格像元</source>
         <translation>Move the pointer to read pixels from all visible rasters</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1625"/>
+        <location filename="../qml/Main.qml" line="1675"/>
         <source>请先加载 GeoTIFF 数据</source>
         <translation>Load GeoTIFF data first</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1626"/>
+        <location filename="../qml/Main.qml" line="1676"/>
         <source>将鼠标移动到地图数据上开始查询</source>
         <translation>Move the pointer over map data to start identifying</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1654"/>
+        <location filename="../qml/Main.qml" line="1704"/>
         <source>像元：%1</source>
         <translation>Pixel: %1</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1683"/>
+        <location filename="../qml/Main.qml" line="1733"/>
         <source>矢量属性</source>
         <translation>Vector Attributes</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1684"/>
+        <location filename="../qml/Main.qml" line="1734"/>
         <source>单击地图要素进行识别；命中要素会高亮</source>
         <translation>Click a map feature to identify it; matches are highlighted</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1696"/>
+        <location filename="../qml/Main.qml" line="1746"/>
         <source>当前查询图层</source>
         <translation>Active Identify Layer</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1735"/>
+        <location filename="../qml/Main.qml" line="1785"/>
         <source>请选择一个矢量图层</source>
         <translation>Select a vector layer</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1736"/>
+        <location filename="../qml/Main.qml" line="1786"/>
         <source>在地图上单击以查询要素</source>
         <translation>Click the map to identify a feature</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1750"/>
+        <location filename="../qml/Main.qml" line="1800"/>
         <source>FID: %1</source>
         <translation>FID: %1</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1807"/>
+        <location filename="../qml/Main.qml" line="1857"/>
         <source>语言、界面、Qt Quick 样式与快捷键</source>
         <translation>Language, appearance, Qt Quick style, and shortcuts</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1822"/>
+        <location filename="../qml/Main.qml" line="1872"/>
         <source>外观</source>
         <translation>Appearance</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1826"/>
+        <location filename="../qml/Main.qml" line="1876"/>
         <source>语言</source>
         <translation>Language</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1832"/>
+        <location filename="../qml/Main.qml" line="1882"/>
         <source>简体中文</source>
         <translation>Simplified Chinese</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1837"/>
+        <location filename="../qml/Main.qml" line="1887"/>
         <source>字体</source>
         <translation>Font</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1848"/>
+        <location filename="../qml/Main.qml" line="1898"/>
         <source>字号</source>
         <translation>Font Size</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1866"/>
+        <location filename="../qml/Main.qml" line="1916"/>
         <source>工具栏透明度</source>
         <translation>Toolbar opacity</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1885"/>
+        <location filename="../qml/Main.qml" line="1935"/>
         <source>Qt Quick Style</source>
         <translation>Qt Quick Style</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1899"/>
+        <location filename="../qml/Main.qml" line="1949"/>
         <source>样式变更将在下次启动 GeoReader 时生效。</source>
         <translation>The new style will take effect after restarting GeoReader.</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1914"/>
+        <location filename="../qml/Main.qml" line="1964"/>
         <source>快捷键</source>
         <translation>Shortcuts</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1921"/>
+        <location filename="../qml/Main.qml" line="1971"/>
         <source>打开文件</source>
         <translation>Open Files</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1924"/>
+        <location filename="../qml/Main.qml" line="1974"/>
         <source>平移</source>
         <translation>Pan</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1925"/>
+        <location filename="../qml/Main.qml" line="1975"/>
         <source>适合范围</source>
         <translation>Fit to Layer</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1946"/>
+        <location filename="../qml/Main.qml" line="1996"/>
         <source>恢复默认快捷键</source>
         <translation>Restore Default Shortcuts</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1971"/>
+        <location filename="../qml/Main.qml" line="2021"/>
         <source>版权声明</source>
         <translation>Copyright Notice</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1977"/>
+        <location filename="../qml/Main.qml" line="2027"/>
         <source>本APP由西北大学谭振宇团队开发。用户可以免费分发和使用；商业使用必须获得作者授权。</source>
         <translation>GeoReader is developed by Zhenyu Tan&apos;s team at Northwest University. Users may freely use and redistribute it; commercial use requires the author&apos;s authorization.</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2004"/>
+        <location filename="../qml/Main.qml" line="2054"/>
         <source>Column %1, Row %2</source>
         <translation>Column %1, Row %2</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2096"/>
+        <location filename="../qml/Main.qml" line="2146"/>
         <source>图层元信息</source>
         <translation>Layer Metadata</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2245"/>
+        <location filename="../qml/Main.qml" line="2295"/>
         <source>属性表</source>
         <translation>Attribute Table</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2287"/>
+        <location filename="../qml/Main.qml" line="2337"/>
         <source>查询列</source>
         <translation>Search Column</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2299"/>
+        <location filename="../qml/Main.qml" line="2349"/>
         <source>输入属性值（包含匹配）</source>
         <translation>Enter a value (contains match)</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2305"/>
+        <location filename="../qml/Main.qml" line="2355"/>
         <source>查询</source>
         <translation>Search</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2311"/>
+        <location filename="../qml/Main.qml" line="2361"/>
         <source>清除</source>
         <translation>Clear</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2462"/>
+        <location filename="../qml/Main.qml" line="2512"/>
         <source>显示 %1 / %2 个要素</source>
         <translation>Showing %1 of %2 features</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2527"/>
+        <location filename="../qml/Main.qml" line="2577"/>
         <source>导入多维数据</source>
         <translation>Import Multidimensional Data</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2553"/>
-        <location filename="../qml/Main.qml" line="2775"/>
+        <location filename="../qml/Main.qml" line="2603"/>
+        <location filename="../qml/Main.qml" line="2825"/>
         <source>取消</source>
         <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2577"/>
+        <location filename="../qml/Main.qml" line="2627"/>
         <source>变量</source>
         <translation>Variable</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2597"/>
+        <location filename="../qml/Main.qml" line="2647"/>
         <source>数据类型</source>
         <translation>Data Type</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2604"/>
+        <location filename="../qml/Main.qml" line="2654"/>
         <source>单位</source>
         <translation>Unit</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2621"/>
+        <location filename="../qml/Main.qml" line="2671"/>
         <source>空间维与坐标解释</source>
         <translation>Spatial Dimensions and Coordinate Interpretation</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2630"/>
+        <location filename="../qml/Main.qml" line="2680"/>
         <source>X 维</source>
         <translation>X Dimension</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2640"/>
+        <location filename="../qml/Main.qml" line="2690"/>
         <source>Y 维</source>
         <translation>Y Dimension</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2650"/>
+        <location filename="../qml/Main.qml" line="2700"/>
         <source>坐标模式</source>
         <translation>Coordinate Mode</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2659"/>
+        <location filename="../qml/Main.qml" line="2709"/>
         <source>自动（采用文件元数据）</source>
         <translation>Automatic (use file metadata)</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2660"/>
+        <location filename="../qml/Main.qml" line="2710"/>
         <source>地理坐标</source>
         <translation>Geographic Coordinates</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2661"/>
+        <location filename="../qml/Main.qml" line="2711"/>
         <source>投影坐标</source>
         <translation>Projected Coordinates</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2662"/>
+        <location filename="../qml/Main.qml" line="2712"/>
         <source>像素坐标（不显示底图）</source>
         <translation>Pixel Coordinates (no basemap)</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2665"/>
+        <location filename="../qml/Main.qml" line="2715"/>
         <source>源 CRS</source>
         <translation>Source CRS</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2671"/>
+        <location filename="../qml/Main.qml" line="2721"/>
         <source>例如 EPSG:4326 或 EPSG:32648</source>
         <translation>For example EPSG:4326 or EPSG:32648</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2680"/>
+        <location filename="../qml/Main.qml" line="2730"/>
         <source>未在文件中声明 CRS 时，GeoReader 不会根据数值范围猜测。投影坐标必须明确指定 CRS；也可以切换到像素坐标模式。</source>
         <translation>GeoReader does not guess a CRS from value ranges. Projected coordinates require an explicit CRS; alternatively, use pixel coordinate mode.</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2695"/>
+        <location filename="../qml/Main.qml" line="2745"/>
         <source>额外维切片</source>
         <translation>Additional Dimension Slices</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2742"/>
+        <location filename="../qml/Main.qml" line="2792"/>
         <source>提示：当前 GDAL 未包含 HDF4 驱动；NetCDF 与 HDF5 不受影响。</source>
         <translation>Note: this GDAL build has no HDF4 driver. NetCDF and HDF5 are unaffected.</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2770"/>
+        <location filename="../qml/Main.qml" line="2820"/>
         <source>正在建立按需渲染视图…</source>
         <translation>Preparing the on-demand rendering view…</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2780"/>
+        <location filename="../qml/Main.qml" line="2830"/>
         <source>添加图层</source>
         <translation>Add Layer</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2803"/>
+        <location filename="../qml/Main.qml" line="2853"/>
         <source>选择线颜色</source>
         <translation>Choose Stroke Color</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2803"/>
+        <location filename="../qml/Main.qml" line="2853"/>
         <source>选择填充颜色</source>
         <translation>Choose Fill Color</translation>
     </message>

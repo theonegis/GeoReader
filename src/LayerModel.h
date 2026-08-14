@@ -105,6 +105,7 @@ public:
 
     Q_INVOKABLE QVariantMap get(int row) const;
     Q_INVOKABLE QVariantMap datasetInfo(const QString &datasetId) const;
+    Q_INVOKABLE int indexOfLayer(const QString &layerId) const;
     Q_INVOKABLE void setVisible(int row, bool visible);
     Q_INVOKABLE void setOpacity(int row, double opacity);
     Q_INVOKABLE void setVectorStyle(int row, const QColor &lineColor,
@@ -121,6 +122,10 @@ public:
     Q_INVOKABLE void setRasterNoData(int row, bool enabled,
                                      const QString &value);
     Q_INVOKABLE void moveLayer(int from, int to);
+    Q_INVOKABLE bool moveLayerById(const QString &layerId,
+                                   const QString &targetLayerId);
+    Q_INVOKABLE bool moveDataset(const QString &datasetId,
+                                 const QString &targetDatasetId);
     Q_INVOKABLE void removeLayer(int row);
     Q_INVOKABLE void removeDataset(const QString &datasetId);
     Q_INVOKABLE void setDatasetVisible(const QString &datasetId, bool visible);

@@ -9,6 +9,7 @@ Pane {
     property alias body: bodyContainer.data
     property real preferredWidth: 326
     property real minimumPanelWidth: 286
+    readonly property bool containsPointer: panelHover.hovered
     readonly property real maximumPanelWidth: parent
                                                    ? parent.width * 2 / 3
                                                    : 860
@@ -31,6 +32,10 @@ Pane {
     }
 
     contentItem: Item {
+        HoverHandler {
+            id: panelHover
+        }
+
         ColumnLayout {
             anchors.fill: parent
             spacing: 0

@@ -79,12 +79,15 @@ int main(int argc, char **argv)
 
     LayerModel groupedLayers;
     LayerSnapshot roads;
+    roads.id = QStringLiteral("roads");
     roads.datasetId = QStringLiteral("city-data");
     roads.datasetName = QStringLiteral("City database");
     roads.name = QStringLiteral("roads");
     LayerSnapshot buildings = roads;
+    buildings.id = QStringLiteral("buildings");
     buildings.name = QStringLiteral("buildings");
     LayerSnapshot elevation;
+    elevation.id = QStringLiteral("elevation");
     elevation.datasetId = QStringLiteral("elevation-data");
     elevation.datasetName = QStringLiteral("Elevation");
     elevation.name = QStringLiteral("DEM");
@@ -104,13 +107,39 @@ int main(int argc, char **argv)
         return 6;
     }
 
+    if (!expect(groupedLayers.moveLayerById(QStringLiteral("buildings"),
+                                             QStringLiteral("roads")),
+                "Sibling layers could not be reordered by stable ID")
+        || !expect(groupedLayers.get(0).value(QStringLiteral("name"))
+                       == QStringLiteral("buildings"),
+                   "Sibling layer order is incorrect")
+        || !expect(!groupedLayers.moveLayerById(QStringLiteral("buildings"),
+                                                QStringLiteral("elevation")),
+                   "A layer was incorrectly detached from its dataset")) {
+        return 7;
+    }
+
+    if (!expect(groupedLayers.moveDataset(QStringLiteral("elevation-data"),
+                                           QStringLiteral("city-data")),
+                "Dataset group could not be reordered")
+        || !expect(groupedLayers.get(0).value(QStringLiteral("name"))
+                       == QStringLiteral("DEM"),
+                   "Dataset group order is incorrect")
+        || !expect(groupedLayers.get(1).value(QStringLiteral("datasetId"))
+                       == QStringLiteral("city-data")
+                   && groupedLayers.get(2).value(QStringLiteral("datasetId"))
+                          == QStringLiteral("city-data"),
+                   "Dataset children stopped being contiguous after reorder")) {
+        return 8;
+    }
+
     groupedLayers.setDatasetVisible(QStringLiteral("city-data"), false);
-    if (!expect(!groupedLayers.get(0)
+    if (!expect(!groupedLayers.get(1)
                      .value(QStringLiteral("layerVisible")).toBool()
-                && !groupedLayers.get(1)
+                && !groupedLayers.get(2)
                         .value(QStringLiteral("layerVisible")).toBool(),
                 "Dataset visibility did not update every child layer")) {
-        return 7;
+        return 9;
     }
 
     groupedLayers.removeDataset(QStringLiteral("city-data"));
@@ -121,7 +150,7 @@ int main(int argc, char **argv)
         || !expect(groupedLayers.get(0).value(QStringLiteral("name"))
                        == QStringLiteral("DEM"),
                    "Dataset removal removed an unrelated layer")) {
-        return 8;
+        return 10;
     }
     return 0;
 }

@@ -62,6 +62,8 @@ class MapCanvas : public QQuickPaintedItem
                NOTIFY baseMapChanged)
     Q_PROPERTY(QString coordinateMode READ coordinateMode
                NOTIFY coordinateModeChanged)
+    Q_PROPERTY(bool wheelZoomEnabled READ wheelZoomEnabled
+               WRITE setWheelZoomEnabled NOTIFY wheelZoomEnabledChanged)
 
 public:
     explicit MapCanvas(QQuickItem *parent = nullptr);
@@ -82,6 +84,7 @@ public:
     QString baseMap() const { return m_baseMap; }
     QString baseMapAttribution() const;
     QString coordinateMode() const { return m_coordinateMode; }
+    bool wheelZoomEnabled() const { return m_wheelZoomEnabled; }
 
     Q_INVOKABLE void zoomBy(double delta);
     Q_INVOKABLE void panBy(double horizontalPixels, double verticalPixels);
@@ -96,6 +99,7 @@ public:
     Q_INVOKABLE void setSelectedFeatureWkt(const QString &wkt);
     Q_INVOKABLE void clearSelectedFeature();
     Q_INVOKABLE void refresh();
+    void setWheelZoomEnabled(bool enabled);
 
 signals:
     void layerModelChanged();
@@ -106,6 +110,7 @@ signals:
     void inspectionModeChanged();
     void baseMapChanged();
     void coordinateModeChanged();
+    void wheelZoomEnabledChanged();
     void mapClicked(double longitude, double latitude);
     void renderError(const QString &message);
 
@@ -166,4 +171,5 @@ private:
     double m_pixelCenterX = 0.0;
     double m_pixelCenterY = 0.0;
     double m_pixelUnitsPerScreenPixel = 1.0;
+    bool m_wheelZoomEnabled = true;
 };

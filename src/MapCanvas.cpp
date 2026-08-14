@@ -1102,7 +1102,7 @@ void MapCanvas::wheelEvent(QWheelEvent *event)
     // 滚轮事件可能在 TableView/ScrollView 到达边界后继续传递到下层
     // QQuickItem。只有鼠标位置最上层的可视项属于 MapCanvas 时才缩放，
     // 从源头避免悬浮面板、属性表和工具栏上的滚轮影响地图。
-    if (!isTopmostMapItemAt(event->position())) {
+    if (!m_wheelZoomEnabled || !isTopmostMapItemAt(event->position())) {
         event->ignore();
         return;
     }
@@ -1111,6 +1111,14 @@ void MapCanvas::wheelEvent(QWheelEvent *event)
     if (!qFuzzyIsNull(steps))
         zoomBy(std::clamp(steps, -2.0, 2.0));
     event->accept();
+}
+
+void MapCanvas::setWheelZoomEnabled(bool enabled)
+{
+    if (m_wheelZoomEnabled == enabled)
+        return;
+    m_wheelZoomEnabled = enabled;
+    emit wheelZoomEnabledChanged();
 }
 
 bool MapCanvas::isTopmostMapItemAt(const QPointF &position) const

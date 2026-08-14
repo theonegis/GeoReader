@@ -232,6 +232,17 @@ QVariantMap LayerModel::datasetInfo(const QString &datasetId) const
     return result;
 }
 
+int LayerModel::indexOfLayer(const QString &layerId) const
+{
+    const auto iterator = std::find_if(
+        m_layers.cbegin(), m_layers.cend(), [&layerId](const auto &layer) {
+            return layer.id == layerId;
+        });
+    return iterator == m_layers.cend()
+        ? -1
+        : static_cast<int>(std::distance(m_layers.cbegin(), iterator));
+}
+
 void LayerModel::setVisible(int row, bool visible)
 {
     setData(index(row), visible, VisibleRole);
@@ -358,8 +369,10 @@ void LayerModel::setRasterNoData(int row, bool enabled, const QString &value)
 
 void LayerModel::moveLayer(int from, int to)
 {
-    if (from < 0 || from >= m_layers.size() || to < 0 || to >= m_layers.size() || from == to)
+    if (from < 0 || from >= m_layers.size() || to < 0
+        || to >= m_layers.size() || from == to) {
         return;
+    }
     // beginMoveRows 的目标位置使用“插入前”坐标；向下移动时需跨过源行。
     // QML、选择索引和渲染快照因此会收到标准模型移动通知，而非整表重置。
     const int destination = to > from ? to + 1 : to;
@@ -368,6 +381,78 @@ void LayerModel::moveLayer(int from, int to)
     endMoveRows();
     advanceRevision();
     emit renderingChanged();
+}
+
+bool LayerModel::moveLayerById(const QString &layerId,
+                               const QString &targetLayerId)
+{
+    const int from = indexOfLayer(layerId);
+    const int to = indexOfLayer(targetLayerId);
+    if (from < 0 || to < 0 || from == to
+        || m_layers.at(from).datasetId != m_layers.at(to).datasetId) {
+        return false;
+    }
+
+    moveLayer(from, to);
+    return true;
+}
+
+bool LayerModel::moveDataset(const QString &datasetId,
+                             const QString &targetDatasetId)
+{
+    if (datasetId.isEmpty() || targetDatasetId.isEmpty()
+        || datasetId == targetDatasetId) {
+        return false;
+    }
+
+    const auto sourceBegin = std::find_if(
+        m_layers.cbegin(), m_layers.cend(), [&datasetId](const auto &layer) {
+            return layer.datasetId == datasetId;
+        });
+    const auto targetBegin = std::find_if(
+        m_layers.cbegin(), m_layers.cend(),
+        [&targetDatasetId](const auto &layer) {
+            return layer.datasetId == targetDatasetId;
+        });
+    if (sourceBegin == m_layers.cend() || targetBegin == m_layers.cend())
+        return false;
+
+    const int sourceFirst =
+        static_cast<int>(std::distance(m_layers.cbegin(), sourceBegin));
+    const int targetFirst =
+        static_cast<int>(std::distance(m_layers.cbegin(), targetBegin));
+    const int sourceCount = static_cast<int>(std::count_if(
+        sourceBegin, m_layers.cend(), [&datasetId](const auto &layer) {
+            return layer.datasetId == datasetId;
+        }));
+    const int targetCount = static_cast<int>(std::count_if(
+        targetBegin, m_layers.cend(),
+        [&targetDatasetId](const auto &layer) {
+            return layer.datasetId == targetDatasetId;
+        }));
+    const int sourceLast = sourceFirst + sourceCount - 1;
+
+    // 数据组必须始终保持连续。ListView 使用 section delegate 显示数据组；
+    // Qt Quick 在跨 section 执行 beginMoveRows 后可能保留旧分组的布局缓存，
+    // 造成图层卡片之间出现大块空白。因此跨数据组移动使用一次模型重置，
+    // 让 section 与 delegate 按新顺序完整重建。同一数据内的普通图层移动
+    // 仍由 moveLayer() 使用 beginMoveRows/endMoveRows 增量更新。
+    beginResetModel();
+    if (sourceFirst < targetFirst) {
+        const int destination = targetFirst + targetCount;
+        std::rotate(m_layers.begin() + sourceFirst,
+                    m_layers.begin() + sourceLast + 1,
+                    m_layers.begin() + destination);
+    } else {
+        const int destination = targetFirst;
+        std::rotate(m_layers.begin() + destination,
+                    m_layers.begin() + sourceFirst,
+                    m_layers.begin() + sourceLast + 1);
+    }
+    endResetModel();
+    advanceRevision();
+    emit renderingChanged();
+    return true;
 }
 
 void LayerModel::removeLayer(int row)

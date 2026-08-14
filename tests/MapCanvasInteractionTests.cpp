@@ -84,5 +84,20 @@ int main(int argc, char **argv)
         return 3;
     }
 
+    const double zoomBeforeExplicitBlock = canvas.zoomLevel();
+    canvas.setWheelZoomEnabled(false);
+    sendWheel(canvas, {100, 100}, 120);
+    if (!expect(unchanged(canvas.zoomLevel(), zoomBeforeExplicitBlock),
+                "Explicit panel hover guard did not block map zoom")) {
+        return 4;
+    }
+
+    canvas.setWheelZoomEnabled(true);
+    sendWheel(canvas, {100, 100}, 120);
+    if (!expect(canvas.zoomLevel() > zoomBeforeExplicitBlock,
+                "Map zoom did not resume after leaving the panel")) {
+        return 5;
+    }
+
     return 0;
 }
