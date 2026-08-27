@@ -8,11 +8,11 @@
 #include <QMutex>
 #include <QNetworkAccessManager>
 #include <QPointF>
-#include <QQuickPaintedItem>
 #include <QRectF>
 #include <QSet>
 #include <QString>
 #include <QTimer>
+#include <QWidget>
 
 class QNetworkReply;
 
@@ -42,34 +42,13 @@ struct RenderResult
     MapViewport viewport;
 };
 
-class MapCanvas : public QQuickPaintedItem
+class MapCanvas final : public QWidget
 {
     Q_OBJECT
-    Q_PROPERTY(LayerModel *layerModel READ layerModel WRITE setLayerModel NOTIFY layerModelChanged)
-    Q_PROPERTY(double centerLongitude READ centerLongitude NOTIFY viewportChanged)
-    Q_PROPERTY(double centerLatitude READ centerLatitude NOTIFY viewportChanged)
-    Q_PROPERTY(double zoomLevel READ zoomLevel NOTIFY viewportChanged)
-    Q_PROPERTY(double mouseLongitude READ mouseLongitude NOTIFY mouseCoordinateChanged)
-    Q_PROPERTY(double mouseLatitude READ mouseLatitude NOTIFY mouseCoordinateChanged)
-    Q_PROPERTY(bool rendering READ rendering NOTIFY renderingChanged)
-    Q_PROPERTY(bool rectangleZoomActive READ rectangleZoomActive
-               WRITE setRectangleZoomActive NOTIFY rectangleZoomActiveChanged)
-    Q_PROPERTY(QString inspectionMode READ inspectionMode
-               WRITE setInspectionMode NOTIFY inspectionModeChanged)
-    Q_PROPERTY(QString baseMap READ baseMap WRITE setBaseMap
-               NOTIFY baseMapChanged)
-    Q_PROPERTY(QString baseMapAttribution READ baseMapAttribution
-               NOTIFY baseMapChanged)
-    Q_PROPERTY(QString coordinateMode READ coordinateMode
-               NOTIFY coordinateModeChanged)
-    Q_PROPERTY(bool wheelZoomEnabled READ wheelZoomEnabled
-               WRITE setWheelZoomEnabled NOTIFY wheelZoomEnabledChanged)
 
 public:
-    explicit MapCanvas(QQuickItem *parent = nullptr);
+    explicit MapCanvas(QWidget *parent = nullptr);
     ~MapCanvas() override;
-
-    void paint(QPainter *painter) override;
 
     LayerModel *layerModel() const { return m_layerModel; }
     void setLayerModel(LayerModel *model);
@@ -85,20 +64,21 @@ public:
     QString baseMapAttribution() const;
     QString coordinateMode() const { return m_coordinateMode; }
     bool wheelZoomEnabled() const { return m_wheelZoomEnabled; }
+    int attributionRightInset() const { return m_attributionRightInset; }
 
-    Q_INVOKABLE void zoomBy(double delta);
-    Q_INVOKABLE void panBy(double horizontalPixels, double verticalPixels);
-    Q_INVOKABLE void fitBounds(double minLon, double minLat,
-                               double maxLon, double maxLat);
-    Q_INVOKABLE void setRectangleZoomActive(bool active);
-    Q_INVOKABLE void setInspectionMode(const QString &mode);
-    Q_INVOKABLE void setBaseMap(const QString &baseMap);
-    Q_INVOKABLE void setCoordinateMode(const QString &mode,
-                                       int pixelWidth = 0,
-                                       int pixelHeight = 0);
-    Q_INVOKABLE void setSelectedFeatureWkt(const QString &wkt);
-    Q_INVOKABLE void clearSelectedFeature();
-    Q_INVOKABLE void refresh();
+    void zoomBy(double delta);
+    void panBy(double horizontalPixels, double verticalPixels);
+    void fitBounds(double minLon, double minLat,
+                   double maxLon, double maxLat);
+    void setRectangleZoomActive(bool active);
+    void setInspectionMode(const QString &mode);
+    void setBaseMap(const QString &baseMap);
+    void setCoordinateMode(const QString &mode,
+                           int pixelWidth = 0, int pixelHeight = 0);
+    void setAttributionRightInset(int inset);
+    void setSelectedFeatureWkt(const QString &wkt);
+    void clearSelectedFeature();
+    void refresh();
     void setWheelZoomEnabled(bool enabled);
 
 signals:
@@ -115,11 +95,12 @@ signals:
     void renderError(const QString &message);
 
 protected:
-    void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
+    bool event(QEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
-    void hoverMoveEvent(QHoverEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
 
 private:
@@ -131,7 +112,6 @@ private:
 
     QPointF screenToLonLat(const QPointF &screenPoint) const;
     MapViewport currentViewport() const;
-    bool isTopmostMapItemAt(const QPointF &position) const;
     void updateMouseCoordinate(const QPointF &position);
     void updateCursor();
     void scheduleOverlayRender();
@@ -162,9 +142,11 @@ private:
     QRectF m_selectionRectangle;
     QString m_selectedFeatureWkt;
     bool m_dragging = false;
+    bool m_panPressActive = false;
     bool m_selectingRectangle = false;
     bool m_rectangleZoomActive = false;
     bool m_rendering = false;
+    int m_attributionRightInset = 0;
     QString m_inspectionMode = QStringLiteral("pan");
     QString m_baseMap = QStringLiteral("osm");
     QString m_coordinateMode = QStringLiteral("geographic");

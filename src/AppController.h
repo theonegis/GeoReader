@@ -19,7 +19,6 @@ class AppController final : public QObject
     Q_PROPERTY(QString language READ language WRITE setLanguage NOTIFY languageChanged)
     Q_PROPERTY(double toolBarOpacity READ toolBarOpacity WRITE setToolBarOpacity
                NOTIFY toolBarOpacityChanged)
-    Q_PROPERTY(bool restartRequired READ restartRequired NOTIFY restartRequiredChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
     Q_PROPERTY(QString version READ version CONSTANT)
     Q_PROPERTY(QVariantMap pendingMultidimensionalImport
@@ -41,7 +40,6 @@ public:
     QString qtStyle() const { return m_qtStyle; }
     QString language() const { return m_language; }
     double toolBarOpacity() const { return m_toolBarOpacity; }
-    bool restartRequired() const { return m_restartRequired; }
     QString statusMessage() const { return m_statusMessage; }
     QString version() const;
     QVariantMap pendingMultidimensionalImport() const
@@ -85,7 +83,6 @@ signals:
     void qtStyleChanged();
     void languageChanged();
     void toolBarOpacityChanged();
-    void restartRequiredChanged();
     void statusMessageChanged();
     void layerAdded(double minLon, double minLat, double maxLon, double maxLat);
     void shortcutsChanged();
@@ -113,7 +110,6 @@ private:
     QString m_qtStyle;
     QString m_language;
     double m_toolBarOpacity = 0.85;
-    bool m_restartRequired = false;
     QString m_statusMessage;
     MultidimensionalScanResult m_pendingMultidimensionalImport;
     bool m_multidimensionalImportBusy = false;

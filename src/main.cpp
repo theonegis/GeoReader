@@ -1,4 +1,5 @@
 #include "AppController.h"
+#include "MainWindow.h"
 #include "MapCanvas.h"
 
 #include <QApplication>
@@ -9,13 +10,11 @@
 #include <QFont>
 #include <QIcon>
 #include <QLocale>
-#include <QQmlApplicationEngine>
-#include <QQmlContext>
-#include <QQuickStyle>
-#include <QQuickWindow>
-#include <QSettings>
+#include <QStyleHints>
 #include <QTimer>
 #include <QTranslator>
+
+#include <oclero/qlementine.hpp>
 
 #include <cpl_conv.h>
 #include <gdal.h>
@@ -117,6 +116,19 @@ void configureLinuxPlatform()
 #endif
 }
 
+void applyQlementineTheme(
+    oclero::qlementine::QlementineStyle *style, const QString &theme)
+{
+    const bool followsSystem = theme == QStringLiteral("System");
+    const bool dark = theme == QStringLiteral("Dark")
+        || (followsSystem
+            && QApplication::styleHints()->colorScheme()
+                == Qt::ColorScheme::Dark);
+    style->setThemeJsonPath(
+        dark ? QStringLiteral(":/themes/qlementine-dark.json")
+             : QStringLiteral(":/themes/qlementine-light.json"));
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -168,7 +180,13 @@ int main(int argc, char *argv[])
                                  QStringLiteral("[files...]"));
     parser.process(application);
 
-    QQuickStyle::setStyle(AppController::savedOrPlatformStyle());
+    auto *qlementineStyle =
+        new oclero::qlementine::QlementineStyle(&application);
+    qlementineStyle->setAutoIconColor(
+        oclero::qlementine::AutoIconColor::TextColor);
+    QApplication::setStyle(qlementineStyle);
+    applyQlementineTheme(qlementineStyle,
+                         AppController::savedOrPlatformStyle());
     QTranslator translator;
     applyLanguage(application, translator,
                   AppController::savedOrSystemLanguage());
@@ -176,29 +194,36 @@ int main(int argc, char *argv[])
     registerMapnikInputPlugins();
     GDALAllRegister();
 
-    qmlRegisterType<MapCanvas>("GeoReader", 1, 0, "MapCanvas");
-
     AppController controller;
     QFont font = application.font();
     font.setFamily(controller.fontFamily());
     font.setPointSize(controller.fontSize());
     application.setFont(font);
 
-    QQmlApplicationEngine engine;
-    engine.rootContext()->setContextProperty(QStringLiteral("app"), &controller);
+    MainWindow window(&controller);
+    const auto refreshTheme = [&application, &controller, qlementineStyle] {
+        applyQlementineTheme(qlementineStyle, controller.qtStyle());
+        QFont font = application.font();
+        font.setFamily(controller.fontFamily());
+        font.setPointSize(controller.fontSize());
+        application.setFont(font);
+    };
+    QObject::connect(&controller, &AppController::qtStyleChanged,
+                     &window, refreshTheme);
     QObject::connect(
-        &controller, &AppController::languageChanged, &engine,
-        [&application, &translator, &controller, &engine] {
-            applyLanguage(application, translator, controller.language());
-            engine.retranslate();
+        application.styleHints(), &QStyleHints::colorSchemeChanged,
+        &window, [&controller, refreshTheme](Qt::ColorScheme) {
+            if (controller.qtStyle() == QStringLiteral("System"))
+                refreshTheme();
         });
-    engine.loadFromModule(QStringLiteral("GeoReader"), QStringLiteral("Main"));
-    if (engine.rootObjects().isEmpty())
-        return EXIT_FAILURE;
-    if (parser.isSet(panelOption)) {
-        engine.rootObjects().first()->setProperty(
-            "activePanel", parser.value(panelOption));
-    }
+    QObject::connect(
+        &controller, &AppController::languageChanged, &window,
+        [&application, &translator, &controller] {
+            applyLanguage(application, translator, controller.language());
+        });
+    if (parser.isSet(panelOption))
+        window.setActivePanel(parser.value(panelOption));
+    window.show();
     const QStringList arguments = parser.positionalArguments();
     if (!arguments.isEmpty()) {
         QTimer::singleShot(0, &controller, [&controller, arguments] {
@@ -218,52 +243,40 @@ int main(int argc, char *argv[])
             if (rowOk && longitudeOk && latitudeOk) {
                 QTimer::singleShot(
                     500, &controller,
-                    [&controller, &engine, row, longitude, latitude] {
-                    const QVariantMap result =
-                        controller.queryVector(row, longitude, latitude, 0.01);
-                    QObject *root = engine.rootObjects().value(0);
-                    if (!root)
-                        return;
-                    root->setProperty("selectedVectorLayer", row);
-                    root->setProperty("vectorResult", result);
-                    if (auto *canvas =
-                            root->findChild<MapCanvas *>(
-                                QStringLiteral("mapCanvas"))) {
-                        canvas->setSelectedFeatureWkt(
-                            result.value(QStringLiteral("geometryWkt"))
-                                .toString());
-                    }
+                    [&window, row, longitude, latitude] {
+                    window.setActivePanel(QStringLiteral("vector"));
+                    window.selectVectorFeature(row, longitude, latitude);
                 });
             }
         }
     }
     const auto invokeLayerDialog =
-        [&parser, &engine](const QCommandLineOption &option,
-                          const char *method) {
+        [&parser, &window](const QCommandLineOption &option,
+                          bool metadata) {
             if (!parser.isSet(option))
                 return;
             bool rowOk = false;
             const int row = parser.value(option).toInt(&rowOk);
             if (!rowOk)
                 return;
-            QTimer::singleShot(600, &engine, [&engine, row, method] {
-                if (QObject *root = engine.rootObjects().value(0)) {
-                    QMetaObject::invokeMethod(
-                        root, method, Q_ARG(QVariant, QVariant(row)));
-                }
+            QTimer::singleShot(600, &window, [&window, row, metadata] {
+                if (metadata)
+                    window.showMetadata(row);
+                else
+                    window.showAttributeTable(row);
             });
         };
-    invokeLayerDialog(metadataRowOption, "showMetadata");
-    invokeLayerDialog(attributeTableRowOption, "showAttributeTable");
+    invokeLayerDialog(metadataRowOption, true);
+    invokeLayerDialog(attributeTableRowOption, false);
     if (parser.isSet(screenshotOption)) {
         const QString outputPath =
             QFileInfo(parser.value(screenshotOption)).absoluteFilePath();
         QTimer::singleShot(2500, &application,
-                           [&application, &engine, outputPath] {
-            if (auto *window = qobject_cast<QQuickWindow *>(
-                    engine.rootObjects().value(0))) {
-                window->grabWindow().save(outputPath);
-            }
+                           [&application, &window, outputPath] {
+            QWidget *target = QApplication::activeWindow();
+            if (!target)
+                target = &window;
+            target->grab().save(outputPath);
             application.quit();
         });
     } else if (parser.isSet(smokeTestOption)) {

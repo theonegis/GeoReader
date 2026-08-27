@@ -110,6 +110,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: clang_64
+          modules: qtsvg
           cache: true
 
       - name: Check out pinned vcpkg
@@ -197,6 +198,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: win64_msvc2022_64
+          modules: qtsvg
           cache: true
 
       - name: Enable Visual Studio 2022 x64 environment
@@ -336,7 +338,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: linux_gcc_64
-          modules: qtwaylandcompositor
+          modules: qtsvg qtwaylandcompositor
           cache: true
 
       - name: Check out vcpkg

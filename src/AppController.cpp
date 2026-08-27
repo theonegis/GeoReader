@@ -50,7 +50,18 @@ const QHash<QString, QString> kDefaultShortcuts {
 
 QString platformDefaultStyle()
 {
-    return QStringLiteral("FluentWinUI3");
+    return QStringLiteral("System");
+}
+
+QString normalizedQlementineTheme(const QString &value)
+{
+    if (value.compare(QStringLiteral("Light"), Qt::CaseInsensitive) == 0)
+        return QStringLiteral("Light");
+    if (value.compare(QStringLiteral("Dark"), Qt::CaseInsensitive) == 0)
+        return QStringLiteral("Dark");
+    // Earlier releases stored legacy UI style names in this setting. Treat
+    // those values as "follow the operating system" during migration.
+    return QStringLiteral("System");
 }
 
 QString systemDefaultLanguage()
@@ -313,9 +324,11 @@ AppController::AppController(QObject *parent)
                        QApplication::font().family()).toString();
     m_fontFamily = QFontDatabase::families().contains(savedFont)
         ? savedFont : QApplication::font().family();
-    m_fontSize = settings.value(QStringLiteral("ui/fontSize"), 13).toInt();
-    m_qtStyle = settings.value(QStringLiteral("ui/qtStyle"),
-                               platformDefaultStyle()).toString();
+    m_fontSize = std::clamp(
+        settings.value(QStringLiteral("ui/fontSize"), 13).toInt(), 10, 18);
+    m_qtStyle = normalizedQlementineTheme(
+        settings.value(QStringLiteral("ui/qtStyle"),
+                       platformDefaultStyle()).toString());
     m_language = settings.value(QStringLiteral("ui/language"),
                                 systemDefaultLanguage()).toString();
     m_toolBarOpacity =
@@ -333,7 +346,9 @@ QString AppController::version() const
 QString AppController::savedOrPlatformStyle()
 {
     QSettings settings(QString::fromLatin1(kOrganization), QString::fromLatin1(kApplication));
-    return settings.value(QStringLiteral("ui/qtStyle"), platformDefaultStyle()).toString();
+    return normalizedQlementineTheme(
+        settings.value(QStringLiteral("ui/qtStyle"),
+                       platformDefaultStyle()).toString());
 }
 
 QString AppController::savedOrSystemLanguage()
@@ -399,7 +414,7 @@ void AppController::setFontFamily(const QString &family)
 
 void AppController::setFontSize(int size)
 {
-    size = std::clamp(size, 10, 22);
+    size = std::clamp(size, 10, 18);
     if (size == m_fontSize)
         return;
     m_fontSize = size;
@@ -413,18 +428,14 @@ void AppController::setFontSize(int size)
 
 void AppController::setQtStyle(const QString &style)
 {
-    const QString normalized = style.trimmed();
-    if (normalized.isEmpty() || normalized == m_qtStyle)
+    const QString normalized = normalizedQlementineTheme(style);
+    if (normalized == m_qtStyle)
         return;
     m_qtStyle = normalized;
     QSettings(QString::fromLatin1(kOrganization), QString::fromLatin1(kApplication))
         .setValue(QStringLiteral("ui/qtStyle"), normalized);
     emit qtStyleChanged();
-    if (!m_restartRequired) {
-        m_restartRequired = true;
-        emit restartRequiredChanged();
-    }
-    setStatus(tr("Qt Quick 样式将在下次启动时应用"));
+    setStatus(tr("Qlementine 主题已应用"));
 }
 
 void AppController::setLanguage(const QString &language)
@@ -571,7 +582,8 @@ void AppController::addVectorLayers(const QString &path,
         layer.path = path;
         layer.sourceLayer = QString::fromUtf8(ogrLayer->GetName());
         layer.name = dataset->GetLayerCount() > 1
-            ? layer.sourceLayer : datasetName;
+            ? QStringLiteral("%1 · %2").arg(datasetName, layer.sourceLayer)
+            : datasetName;
         layer.type = QStringLiteral("vector");
         layer.geometryType = vectorGeometryType(ogrLayer);
         layer.srs = srsProjString(ogrLayer->GetSpatialRef());

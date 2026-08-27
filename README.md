@@ -1,18 +1,21 @@
 # GeoReader
 
-GeoReader 是一款以 **Qt 6 + Mapnik + GDAL/OGR** 构建的现代桌面空间数据浏览器。它默认显示 OpenStreetMap 底图，也可切换 Esri 世界影像和 OpenTopoMap 地形图，并叠加查看 Shapefile、GeoJSON、GeoPackage 和 GeoTIFF。
+GeoReader 是一款以 **Qt 6 Widgets + Qlementine + Mapnik + GDAL/OGR**
+构建的现代桌面空间数据浏览器。它可切换 OpenStreetMap、Esri 世界影像和
+OpenTopoMap 底图，并叠加查看 Shapefile、GeoJSON、GeoPackage、GeoTIFF，
+以及 GDAL 支持的 HDF、NetCDF 等多维栅格数据。
 
 当前版本聚焦 QGIS 中的数据浏览、可视化和识别操作，并以更紧凑、现代的
 界面重新实现；不包含空间数据编辑与复杂分析功能。
 
 ## 界面预览
 
-图层管理面板支持按数据源分组、样式即时调整、元信息/属性表入口，并可在
-数据源内拖动图层改变 Canvas 合成顺序；右侧浮动面板可通过左边框调整宽度。
+图层管理浮动面板支持样式即时调整、元信息/属性表入口，以及直接拖动图层
+改变 Canvas 中的合成顺序。
 
 ![GeoReader 图层管理界面](docs/images/georeader-layer-management.png)
 
-矢量属性表为居中、非模态的可拖动悬浮窗口，支持列排序和指定字段查询。
+矢量属性表为非模态原生窗口，支持列排序和指定字段查询。
 
 ![GeoReader 矢量属性表](docs/images/georeader-attribute-table.png)
 
@@ -63,20 +66,19 @@ GeoReader 是一款以 **Qt 6 + Mapnik + GDAL/OGR** 构建的现代桌面空间�
   升降序排列，并可选择字段后按属性值进行不区分大小写的包含查询；窗口
   主体可向左右或下方拖出主界面并自动裁剪，同时始终保留可拖回的标题栏区域
 - 简体中文与 English 即时切换
-- 字体、字号、语言、工具栏透明度（默认 0.85）、Qt Quick Style 和
+- 字体、字号、语言、工具栏透明度（默认 0.85）、Qlementine 主题和
   快捷键持久化
 - 工具栏采用 Heroicons 24 px outline 图标；APP Icon 使用蓝紫渐变的
   小圆角三图层设计，并提供 macOS `.icns`、Windows `.ico` 和 Linux SVG
 - macOS Intel 与 Apple Silicon 安装包最低支持 macOS Monterey 12
-- 跨平台默认 Style：
-  - macOS：`FluentWinUI3`
-  - Windows：`FluentWinUI3`
-  - Linux：`FluentWinUI3`
+- macOS、Windows 与 Linux 统一使用 Qlementine `v1.4.2` 原生
+  `QStyle`，支持跟随系统、浅色和深色主题即时切换
 - Linux 原生支持 Wayland，并保留 X11/XWayland 回退；Wayland 会话中默认
   按 `wayland;xcb` 顺序选择 Qt QPA 后端，用户设置的 `QT_QPA_PLATFORM`
   始终具有更高优先级
 
-> Qt Quick Style 必须在 QML 控件创建前设置，因此 Style 修改会在下次启动生效；字体、图层样式和波段修改即时生效。
+> 主界面完全由 Qt Widgets 构建；Qlementine 主题、字体、图层样式和波段
+> 修改均即时生效，无需重启应用。
 
 ## 版权与使用
 
@@ -88,15 +90,15 @@ GeoReader 是一款以 **Qt 6 + Mapnik + GDAL/OGR** 构建的现代桌面空间�
 
 ## 设计架构
 
-GeoReader 将界面、状态、地图交互和数据渲染分开，避免 QML 直接持有
-GDAL/OGR 或 Mapnik 对象：
+GeoReader 将原生桌面界面、状态、地图交互和数据渲染分开，避免界面层
+直接持有 GDAL/OGR 或 Mapnik 对象：
 
 ```text
-Qt Quick / Main.qml
-  ├─ 左侧工具栏、缩放工具、状态条
-  ├─ 图层/栅格值/矢量属性/设置浮动面板
-  ├─ 可拖动的元信息窗口与非模态属性表
-  └─ 双语文本、快捷键、样式输入
+MainWindow / QMainWindow + Qlementine
+  ├─ 左侧磨砂 QToolBar 与地图工具
+  ├─ 图层/栅格值/矢量属性/设置圆角浮动面板
+  ├─ 非模态元信息窗口与属性表
+  └─ 双语文本、快捷键、浅色/深色主题与样式输入
             │
             ▼
 AppController
@@ -110,7 +112,7 @@ AppController
             ├──────────────► AttributeTableModel
             │                 └─ OGR 字段读取、列排序与属性筛选
             ▼
-MapCanvas / QQuickPaintedItem
+MapCanvas / QWidget
   ├─ Web Mercator 视口、平移/缩放/框选/识别工具
   ├─ OSM / Esri World Imagery / OpenTopoMap XYZ 瓦片与磁盘缓存
   ├─ RasterRenderer：GDAL 视窗读取、金字塔与内存着色
@@ -126,7 +128,7 @@ MapCanvas / QQuickPaintedItem
 顺序、元信息与属性表。每个 `LayerSnapshot` 包含数据集标识、数据路径、
 图层类型、坐标系、可见性、不透明度、
 矢量符号、RGB/单波段配置、色带方向、波段范围和 NoData。后台任务只接收
-快照副本和值类型视口，不访问 QML 对象，也不会持有会随 UI 变化的
+快照副本和值类型视口，不访问界面对象，也不会持有会随 UI 变化的
 `QModelIndex`。同一数据集内的图层仍可拖动排序，Canvas 的合成顺序同步更新。
 
 在线底图作为固定的“底图”图层组显示在数据集列表下方，可折叠但不可移除，
@@ -134,13 +136,9 @@ MapCanvas / QQuickPaintedItem
 组内通过单选项保证同一时刻只显示一种底图，初始状态选择 OpenStreetMap；
 切换后立即刷新瓦片、缓存命名空间和地图署名。
 
-右侧浮动面板始终跟随主窗口高度，并可拖动左边框改变宽度；宽度限制在
-286 px 至主窗口宽度的 2/3 之间，避免遮挡整个地图。被省略的数据集名和
-图层名均可通过鼠标悬停提示查看完整文本。
 
-设置使用 `QSettings` 持久化。Qt Quick Style 必须在控件创建前选择，
-因此重启后生效；字体、语言、工具栏透明度、快捷键和图层显示参数即时
-生效。
+设置使用 `QSettings` 持久化。Qlementine 的跟随系统、浅色和深色主题可在
+运行时切换；字体、语言、工具栏透明度、快捷键和图层显示参数也即时生效。
 
 ### 地图坐标与合成顺序
 
@@ -229,7 +227,7 @@ generation 一致的结果才能进入 Canvas，过期帧会被丢弃。这样�
 
 ### 5. 实时像元查询
 
-栅格识别模式使用十字光标。QML 以 45 ms 周期持续消费最新鼠标坐标，
+栅格识别模式使用十字光标。Widgets 定时器以 75 ms 周期持续消费最新鼠标坐标，
 而不是等待鼠标停止或单击；仅在坐标变化时查询。只读 GDAL dataset 句柄
 按文件复用，鼠标移动不会反复打开文件。查询结果包含所有可见栅格的像素
 行列号和各波段值。
@@ -242,15 +240,15 @@ generation 一致的结果才能进入 Canvas，过期帧会被丢弃。这样�
   读取期间的生命周期；
 - `std::clamp`、结构化绑定、`[[nodiscard]]`、RAII 和不可变快照用于
   减少边界错误与隐式所有权；
-- 渲染缓存由 `QMutex` 保护，QML/GUI 状态只在主线程更新；
+- 渲染缓存由 `QMutex` 保护，Widgets/GUI 状态只在主线程更新；
 - CMake 强制 `CMAKE_CXX_STANDARD 20` 且关闭编译器扩展。
 
 ## 开发环境
 
 - 支持 C++20 的编译器
 - CMake 3.25+
-- Qt 6.8+：Core、Gui、Network、Qml、Quick、QuickControls2、Widgets、
-  Concurrent、LinguistTools
+- Qt 6.8+：Core、Gui、Network、Svg、Widgets、Concurrent、LinguistTools
+- Qlementine `v1.4.2`（CMake `FetchContent` 自动获取并固定版本）
 - GDAL 3.8+
 - Mapnik 4.x（含 `shape`、`geojson`、`ogr`、`gdal` 输入插件）
 - ICU（Mapnik 依赖）
@@ -627,9 +625,11 @@ ctest --test-dir build-tests --output-on-failure
 - `src/AppController.*`：原生文件对话框、数据加载、查询和设置
 - `src/AttributeTableModel.*`：矢量属性表读取、排序和筛选
 - `src/LayerModel.*`：数据集分组、图层值对象、角色和样式状态
-- `src/MapCanvas.*`：视口、多源底图、异步 Mapnik 渲染与鼠标交互
-- `qml/Main.qml`：主界面和四个浮动工具面板
-- `qml/components/`：小圆角工具按钮、图标和面板组件
+- `src/MainWindow.*`：Qt Widgets 主窗口、工具栏、停靠面板和原生对话框
+- `src/MapCanvas.*`：`QWidget` 地图画布、多源底图、异步 Mapnik 渲染与鼠标交互
+- `src/MultidimensionalDataset.*`：HDF/NetCDF 等多维数组扫描和切片准备
+- `resources/icons/ui/`：可由 Qlementine 自动着色的原生工具栏 SVG 图标
+- `resources/themes/`：内嵌的 Qlementine 浅色/深色主题
 
 ## 说明
 
@@ -640,5 +640,5 @@ ctest --test-dir build-tests --output-on-failure
 - 首次显示大型数据时会进行离屏渲染；平移/缩放期间通过短防抖避免重复阻塞 UI。
 - 分发安装包时需要遵守 Qt、Mapnik、GDAL 及其传递依赖各自的许可证；
   正式发布前应补充第三方许可证清单、平台签名和公证。
-- Heroicons 采用 MIT 许可证，完整声明见
+- Qlementine 与 Heroicons 均采用 MIT 许可证，完整声明见
   [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。

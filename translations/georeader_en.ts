@@ -4,264 +4,264 @@
 <context>
     <name>AppController</name>
     <message>
-        <location filename="../src/AppController.cpp" line="325"/>
+        <location filename="../src/AppController.cpp" line="338"/>
         <source>准备就绪</source>
         <translation>Ready</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="364"/>
+        <location filename="../src/AppController.cpp" line="379"/>
         <source>空间数据 (*.shp *.geojson *.json *.gpkg *.tif *.tiff *.nc *.nc4 *.cdf *.h5 *.hdf5 *.he5 *.hdf);;矢量数据 (*.shp *.geojson *.json *.gpkg);;栅格数据 (*.tif *.tiff);;多维数据 (*.nc *.nc4 *.cdf *.h5 *.hdf5 *.he5 *.hdf);;所有文件 (*)</source>
         <translation>Spatial data (*.shp *.geojson *.json *.gpkg *.tif *.tiff *.nc *.nc4 *.cdf *.h5 *.hdf5 *.he5 *.hdf);;Vector data (*.shp *.geojson *.json *.gpkg);;Raster data (*.tif *.tiff);;Multidimensional data (*.nc *.nc4 *.cdf *.h5 *.hdf5 *.he5 *.hdf);;All files (*)</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="371"/>
+        <location filename="../src/AppController.cpp" line="386"/>
         <source>打开空间数据</source>
         <translation>Open Spatial Data</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="427"/>
-        <source>Qt Quick 样式将在下次启动时应用</source>
-        <translation>The Qt Quick style will be applied after restart</translation>
+        <location filename="../src/AppController.cpp" line="438"/>
+        <source>Qlementine 主题已应用</source>
+        <translation>Qlementine theme applied</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="486"/>
+        <location filename="../src/AppController.cpp" line="497"/>
         <source>文件不存在：%1</source>
         <translation>File not found: %1</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="502"/>
+        <location filename="../src/AppController.cpp" line="513"/>
         <source>请选择 %1 中要显示的变量和切片</source>
-        <translation>Select a variable and slice to display from %1</translation>
+        <translation>Select the variable and slice to display from %1</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="509"/>
+        <location filename="../src/AppController.cpp" line="520"/>
         <source>当前 GDAL 未包含 HDF4 驱动；该 .hdf 文件可能是 HDF4。请使用带 HDF4 支持的安装包。详细信息：%1</source>
-        <translation>This GDAL build has no HDF4 driver, and this .hdf file may be HDF4. Use a package built with HDF4 support. Details: %1</translation>
+        <translation>The current GDAL build does not include the HDF4 driver; this .hdf file may use HDF4. Install a build with HDF4 support. Details: %1</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="514"/>
+        <location filename="../src/AppController.cpp" line="525"/>
         <source>无法读取多维数据：%1</source>
-        <translation>Unable to read multidimensional data: %1</translation>
+        <translation>Could not read multidimensional data: %1</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="532"/>
+        <location filename="../src/AppController.cpp" line="543"/>
         <source>无法读取该空间数据：%1</source>
         <translation>Unable to read spatial data: %1</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="587"/>
+        <location filename="../src/AppController.cpp" line="599"/>
         <source>已加载 %1 个矢量图层</source>
         <translation>Loaded %1 vector layer(s)</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="615"/>
+        <location filename="../src/AppController.cpp" line="627"/>
         <source>栅格缺少有效的地理参考：%1</source>
         <translation>Raster has no valid georeference: %1</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="680"/>
+        <location filename="../src/AppController.cpp" line="692"/>
         <source>像素坐标（无地理参考）</source>
-        <translation>Pixel coordinates (not georeferenced)</translation>
+        <translation>Pixel coordinates (no georeference)</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="691"/>
+        <location filename="../src/AppController.cpp" line="703"/>
         <source>无法转换栅格范围：%1</source>
         <translation>Unable to transform raster extent: %1</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="702"/>
+        <location filename="../src/AppController.cpp" line="714"/>
         <source>%1 没有可用的地理参考，已进入像素模式并隐藏底图</source>
         <translation>%1 has no usable georeference. Pixel mode is active and the basemap is hidden.</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="705"/>
+        <location filename="../src/AppController.cpp" line="717"/>
         <source>已加载栅格图层：%1（%2 个波段）</source>
         <translation>Loaded raster layer: %1 (%2 bands)</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="768"/>
+        <location filename="../src/AppController.cpp" line="780"/>
         <source>请选择两个不同的 X/Y 维</source>
         <translation>Select two different X/Y dimensions</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="780"/>
+        <location filename="../src/AppController.cpp" line="792"/>
         <source>投影坐标模式必须指定源 CRS（例如 EPSG:32648）</source>
         <translation>Projected coordinate mode requires a source CRS (for example EPSG:32648)</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="815"/>
+        <location filename="../src/AppController.cpp" line="827"/>
         <source>正在建立变量视图：%1</source>
         <translation>Preparing variable view: %1</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="829"/>
+        <location filename="../src/AppController.cpp" line="841"/>
         <source>多维变量加载失败：%1</source>
         <translation>Failed to load multidimensional variable: %1</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="875"/>
+        <location filename="../src/AppController.cpp" line="887"/>
         <source>已取消多维数据导入</source>
         <translation>Multidimensional data import cancelled</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="939"/>
+        <location filename="../src/AppController.cpp" line="951"/>
         <source>B%1: %2</source>
         <translation>B%1: %2</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1057"/>
+        <location filename="../src/AppController.cpp" line="1069"/>
         <source>常规</source>
         <translation>General</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1058"/>
+        <location filename="../src/AppController.cpp" line="1070"/>
         <source>空间信息</source>
         <translation>Spatial Information</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1059"/>
+        <location filename="../src/AppController.cpp" line="1071"/>
         <source>名称</source>
         <translation>Name</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1060"/>
+        <location filename="../src/AppController.cpp" line="1072"/>
         <source>文件</source>
         <translation>File</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1061"/>
+        <location filename="../src/AppController.cpp" line="1073"/>
         <source>文件大小</source>
         <translation>File Size</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1063"/>
+        <location filename="../src/AppController.cpp" line="1075"/>
         <source>坐标参考系</source>
         <translation>Coordinate Reference System</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1064"/>
+        <location filename="../src/AppController.cpp" line="1076"/>
         <source>未知坐标系</source>
         <translation>Unknown CRS</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1068"/>
+        <location filename="../src/AppController.cpp" line="1080"/>
         <source>WGS 84 范围</source>
         <translation>WGS 84 Extent</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1068"/>
+        <location filename="../src/AppController.cpp" line="1080"/>
         <source>像素范围</source>
         <translation>Pixel Extent</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1092"/>
+        <location filename="../src/AppController.cpp" line="1104"/>
         <source>矢量数据</source>
         <translation>Vector Data</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1093"/>
-        <location filename="../src/AppController.cpp" line="1168"/>
+        <location filename="../src/AppController.cpp" line="1105"/>
+        <location filename="../src/AppController.cpp" line="1180"/>
         <source>驱动</source>
         <translation>Driver</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1095"/>
+        <location filename="../src/AppController.cpp" line="1107"/>
         <source>源图层</source>
         <translation>Source Layer</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1096"/>
+        <location filename="../src/AppController.cpp" line="1108"/>
         <source>几何类型</source>
         <translation>Geometry Type</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1100"/>
+        <location filename="../src/AppController.cpp" line="1112"/>
         <source>要素数量</source>
         <translation>Feature Count</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1106"/>
+        <location filename="../src/AppController.cpp" line="1118"/>
         <source>字段数量</source>
         <translation>Field Count</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1124"/>
+        <location filename="../src/AppController.cpp" line="1136"/>
         <source>字段</source>
         <translation>Fields</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1127"/>
+        <location filename="../src/AppController.cpp" line="1139"/>
         <source>字符编码</source>
         <translation>Character Encoding</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1136"/>
-        <location filename="../src/AppController.cpp" line="1221"/>
+        <location filename="../src/AppController.cpp" line="1148"/>
+        <location filename="../src/AppController.cpp" line="1233"/>
         <source>投影定义</source>
         <translation>Projection Definition</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1155"/>
+        <location filename="../src/AppController.cpp" line="1167"/>
         <source>栅格数据</source>
         <translation>Raster Data</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1157"/>
+        <location filename="../src/AppController.cpp" line="1169"/>
         <source>多维数据</source>
         <translation>Multidimensional Data</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1158"/>
+        <location filename="../src/AppController.cpp" line="1170"/>
         <source>变量</source>
         <translation>Variable</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1160"/>
+        <location filename="../src/AppController.cpp" line="1172"/>
         <source>切片</source>
         <translation>Slice</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1162"/>
+        <location filename="../src/AppController.cpp" line="1174"/>
         <source>二维变量（无需额外切片）</source>
-        <translation>Two-dimensional variable (no extra slice)</translation>
+        <translation>2D variable (no additional slice required)</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1164"/>
+        <location filename="../src/AppController.cpp" line="1176"/>
         <source>坐标模式</source>
         <translation>Coordinate Mode</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1166"/>
+        <location filename="../src/AppController.cpp" line="1178"/>
         <source>像素坐标</source>
         <translation>Pixel Coordinates</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1166"/>
+        <location filename="../src/AppController.cpp" line="1178"/>
         <source>地理坐标</source>
         <translation>Geographic Coordinates</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1170"/>
+        <location filename="../src/AppController.cpp" line="1182"/>
         <source>尺寸</source>
         <translation>Dimensions</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1174"/>
+        <location filename="../src/AppController.cpp" line="1186"/>
         <source>波段数量</source>
         <translation>Band Count</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1179"/>
+        <location filename="../src/AppController.cpp" line="1191"/>
         <source>像素大小</source>
         <translation>Pixel Size</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1183"/>
+        <location filename="../src/AppController.cpp" line="1195"/>
         <source>仿射变换</source>
         <translation>Affine Transform</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1204"/>
+        <location filename="../src/AppController.cpp" line="1216"/>
         <source>类型: %1
 颜色解释: %2
 块大小: %3 × %4</source>
@@ -270,14 +270,14 @@ Color interpretation: %2
 Block size: %3 × %4</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1212"/>
+        <location filename="../src/AppController.cpp" line="1224"/>
         <source>
 NoData: %1</source>
         <translation>
 NoData: %1</translation>
     </message>
     <message>
-        <location filename="../src/AppController.cpp" line="1213"/>
+        <location filename="../src/AppController.cpp" line="1225"/>
         <source>波段 %1</source>
         <translation>Band %1</translation>
     </message>
@@ -306,24 +306,6 @@ NoData: %1</translation>
     </message>
 </context>
 <context>
-    <name>EmptyState</name>
-    <message>
-        <location filename="../qml/components/EmptyState.qml" line="7"/>
-        <source>打开空间数据</source>
-        <translation>Open Spatial Data</translation>
-    </message>
-    <message>
-        <location filename="../qml/components/EmptyState.qml" line="8"/>
-        <source>支持 Shapefile、GeoJSON、GeoPackage 和 GeoTIFF</source>
-        <translation>Supports Shapefile, GeoJSON, GeoPackage, and GeoTIFF</translation>
-    </message>
-    <message>
-        <location filename="../qml/components/EmptyState.qml" line="42"/>
-        <source>选择文件…</source>
-        <translation>Choose Files…</translation>
-    </message>
-</context>
-<context>
     <name>LayerModel</name>
     <message>
         <location filename="../src/LayerModel.cpp" line="63"/>
@@ -332,603 +314,687 @@ NoData: %1</translation>
     </message>
 </context>
 <context>
-    <name>Main</name>
+    <name>MainWindow</name>
     <message>
-        <location filename="../qml/Main.qml" line="17"/>
-        <source>GeoReader</source>
-        <translation>GeoReader</translation>
+        <location filename="../src/MainWindow.cpp" line="468"/>
+        <source>正在渲染…</source>
+        <translation>Rendering…</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="81"/>
-        <source>波段 %1</source>
-        <translation>Band %1</translation>
+        <location filename="../src/MainWindow.cpp" line="473"/>
+        <source>地图渲染错误</source>
+        <translation>Map Rendering Error</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="349"/>
-        <source>打开文件 (%1)</source>
-        <translation>Open Files (%1)</translation>
+        <location filename="../src/MainWindow.cpp" line="592"/>
+        <source>主工具栏</source>
+        <translation>Main Toolbar</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="354"/>
-        <source>图层管理</source>
-        <translation>Layers</translation>
+        <location filename="../src/MainWindow.cpp" line="799"/>
+        <source>图层列表</source>
+        <translation>Layer List</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="360"/>
-        <source>栅格值查看</source>
-        <translation>Identify Raster Values</translation>
+        <location filename="../src/MainWindow.cpp" line="807"/>
+        <source>底图</source>
+        <translation>Basemap</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="366"/>
-        <source>矢量属性查看</source>
-        <translation>Identify Vector Features</translation>
+        <location filename="../src/MainWindow.cpp" line="809"/>
+        <source>OpenStreetMap</source>
+        <translation>OpenStreetMap</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="377"/>
-        <location filename="../qml/Main.qml" line="1856"/>
-        <source>设置</source>
-        <translation>Settings</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="407"/>
-        <location filename="../qml/Main.qml" line="1972"/>
-        <source>放大</source>
-        <translation>Zoom In</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="426"/>
-        <location filename="../qml/Main.qml" line="1973"/>
-        <source>缩小</source>
-        <translation>Zoom Out</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="454"/>
-        <source>矩形框选缩放（Esc 取消）</source>
-        <translation>Zoom to Rectangle (Esc to cancel)</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="467"/>
-        <source>图层</source>
-        <translation>Layers</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="469"/>
-        <source>尚未加载空间数据</source>
-        <translation>No spatial data loaded</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1013"/>
-        <source>栅格 · %1 波段</source>
-        <translation>Raster · %1 bands</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1014"/>
-        <source>矢量 · %1</source>
-        <translation>Vector · %1</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1016"/>
-        <source>点</source>
-        <translation>Point</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1018"/>
-        <source>面</source>
-        <translation>Polygon</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1018"/>
-        <source>线</source>
-        <translation>Line</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1078"/>
-        <source>拖动调整图层或数据顺序</source>
-        <translation>Drag to reorder a layer or dataset</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1160"/>
-        <source>不透明度</source>
-        <translation>Opacity</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1184"/>
-        <source>线色</source>
-        <translation>Stroke</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1207"/>
-        <source>点色</source>
-        <translation>Point color</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1207"/>
-        <source>填充</source>
-        <translation>Fill</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1236"/>
-        <source>线宽</source>
-        <translation>Width</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1426"/>
-        <source>波段</source>
-        <translation>Band</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1407"/>
-        <source>反向</source>
-        <translation>Reverse</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1431"/>
-        <source>最小值</source>
-        <translation>Minimum</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1436"/>
-        <source>最大值</source>
-        <translation>Maximum</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1570"/>
-        <source>范围</source>
-        <translation>Range</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1613"/>
-        <source>NoData 透明</source>
-        <translation>Transparent NoData</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1628"/>
-        <source>可输入 nan 或数值</source>
-        <translation>Enter nan or a numeric value</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1258"/>
-        <source>拉伸方式</source>
-        <translation>Stretch method</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1268"/>
-        <source>最小值–最大值</source>
-        <translation>Minimum–Maximum</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1272"/>
-        <source>2%–98% 累计裁剪</source>
-        <translation>2%–98% Cumulative Cut</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1276"/>
-        <source>均值 ±2σ</source>
-        <translation>Mean ±2σ</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1280"/>
-        <source>直方图均衡化</source>
-        <translation>Histogram Equalization</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1305"/>
-        <source>RGB 波段</source>
-        <translation>RGB Bands</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1318"/>
-        <source>红色通道</source>
-        <translation>Red channel</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1345"/>
-        <source>绿色通道</source>
-        <translation>Green channel</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1372"/>
-        <source>蓝色通道</source>
-        <translation>Blue channel</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1395"/>
-        <source>色带</source>
-        <translation>Color ramp</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1422"/>
-        <source>手动范围</source>
-        <translation>Manual range</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1126"/>
-        <source>元信息</source>
-        <translation>Metadata</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="35"/>
-        <source>OpenStreetMap 标准地图</source>
-        <translation>OpenStreetMap Standard</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="36"/>
+        <location filename="../src/MainWindow.cpp" line="810"/>
         <source>Esri 世界影像</source>
         <translation>Esri World Imagery</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="37"/>
+        <location filename="../src/MainWindow.cpp" line="812"/>
         <source>OpenTopoMap 地形图</source>
-        <translation>OpenTopoMap Topographic</translation>
+        <translation>OpenTopoMap Terrain</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="470"/>
-        <source>%1 个数据 · %2 个图层</source>
-        <translation>%1 dataset(s) · %2 layer(s)</translation>
+        <location filename="../src/MainWindow.cpp" line="856"/>
+        <source>所选图层属性</source>
+        <translation>Selected Layer Properties</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="541"/>
-        <source>底图</source>
-        <translation>Basemaps</translation>
+        <location filename="../src/MainWindow.cpp" line="876"/>
+        <source>不透明度</source>
+        <translation>Opacity</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="576"/>
-        <source>折叠底图</source>
-        <translation>Collapse Basemaps</translation>
+        <location filename="../src/MainWindow.cpp" line="896"/>
+        <source>矢量样式</source>
+        <translation>Vector Style</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="576"/>
-        <source>展开底图</source>
-        <translation>Expand Basemaps</translation>
+        <location filename="../src/MainWindow.cpp" line="914"/>
+        <source>线颜色</source>
+        <translation>Stroke Color</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="725"/>
-        <source>显示或隐藏整个数据</source>
-        <translation>Show or hide the entire dataset</translation>
+        <location filename="../src/MainWindow.cpp" line="915"/>
+        <source>填充 / 点颜色</source>
+        <translation>Fill / Point Color</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="752"/>
-        <source>未命名数据</source>
-        <translation>Unnamed dataset</translation>
+        <location filename="../src/MainWindow.cpp" line="916"/>
+        <source>线宽</source>
+        <translation>Width</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="763"/>
-        <source>%1 个图层</source>
-        <translation>%1 layer(s)</translation>
+        <location filename="../src/MainWindow.cpp" line="934"/>
+        <source>栅格显示</source>
+        <translation>Raster Display</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="792"/>
-        <source>折叠图层</source>
-        <translation>Collapse layers</translation>
+        <location filename="../src/MainWindow.cpp" line="945"/>
+        <source>最小值–最大值</source>
+        <translation>Minimum–Maximum</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="792"/>
-        <source>展开图层</source>
-        <translation>Expand layers</translation>
+        <location filename="../src/MainWindow.cpp" line="946"/>
+        <source>2%–98% 累计裁剪</source>
+        <translation>2%–98% Cumulative Cut</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="816"/>
-        <source>移除整个数据</source>
-        <translation>Remove entire dataset</translation>
+        <location filename="../src/MainWindow.cpp" line="947"/>
+        <source>均值 ±2σ</source>
+        <translation>Mean ±2σ</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1114"/>
-        <source>缩放至图层</source>
-        <translation>Zoom to Layer</translation>
+        <location filename="../src/MainWindow.cpp" line="948"/>
+        <source>直方图均衡</source>
+        <translation>Histogram Equalization</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1120"/>
-        <source>打开属性表</source>
-        <translation>Open Attribute Table</translation>
+        <location filename="../src/MainWindow.cpp" line="949"/>
+        <source>拉伸方式</source>
+        <translation>Stretch Method</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1640"/>
-        <source>点击左侧打开按钮添加数据</source>
-        <translation>Use the Open button on the left to add data</translation>
+        <location filename="../src/MainWindow.cpp" line="955"/>
+        <source>色带</source>
+        <translation>Color Ramp</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1657"/>
-        <source>栅格值</source>
-        <translation>Raster Values</translation>
+        <location filename="../src/MainWindow.cpp" line="956"/>
+        <source>反转色带</source>
+        <translation>Reverse Color Ramp</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1658"/>
-        <source>移动鼠标，实时读取所有可见栅格像元</source>
-        <translation>Move the pointer to read pixels from all visible rasters</translation>
+        <location filename="../src/MainWindow.cpp" line="963"/>
+        <source>通道</source>
+        <translation>Channel</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1675"/>
-        <source>请先加载 GeoTIFF 数据</source>
-        <translation>Load GeoTIFF data first</translation>
+        <location filename="../src/MainWindow.cpp" line="964"/>
+        <source>波段</source>
+        <translation>Band</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1676"/>
-        <source>将鼠标移动到地图数据上开始查询</source>
-        <translation>Move the pointer over map data to start identifying</translation>
+        <location filename="../src/MainWindow.cpp" line="965"/>
+        <location filename="../src/MainWindow.cpp" line="1010"/>
+        <source>最小值</source>
+        <translation>Minimum</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1704"/>
-        <source>像元：%1</source>
-        <translation>Pixel: %1</translation>
+        <location filename="../src/MainWindow.cpp" line="966"/>
+        <location filename="../src/MainWindow.cpp" line="1011"/>
+        <source>最大值</source>
+        <translation>Maximum</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1733"/>
-        <source>矢量属性</source>
-        <translation>Vector Attributes</translation>
+        <location filename="../src/MainWindow.cpp" line="967"/>
+        <source>红</source>
+        <translation>Red</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1734"/>
-        <source>单击地图要素进行识别；命中要素会高亮</source>
-        <translation>Click a map feature to identify it; matches are highlighted</translation>
+        <location filename="../src/MainWindow.cpp" line="967"/>
+        <source>绿</source>
+        <translation>Green</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1746"/>
-        <source>当前查询图层</source>
-        <translation>Active Identify Layer</translation>
+        <location filename="../src/MainWindow.cpp" line="967"/>
+        <source>蓝</source>
+        <translation>Blue</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1785"/>
-        <source>请选择一个矢量图层</source>
-        <translation>Select a vector layer</translation>
+        <location filename="../src/MainWindow.cpp" line="1009"/>
+        <source>显示波段</source>
+        <translation>Display Band</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1786"/>
-        <source>在地图上单击以查询要素</source>
-        <translation>Click the map to identify a feature</translation>
+        <location filename="../src/MainWindow.cpp" line="1031"/>
+        <source>使用 NoData</source>
+        <translation>Use NoData</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1800"/>
-        <source>FID: %1</source>
-        <translation>FID: %1</translation>
+        <location filename="../src/MainWindow.cpp" line="1060"/>
+        <source>元数据</source>
+        <translation>Metadata</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="1857"/>
-        <source>语言、界面、Qt Quick 样式与快捷键</source>
-        <translation>Language, appearance, Qt Quick style, and shortcuts</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1872"/>
-        <source>外观</source>
-        <translation>Appearance</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1876"/>
-        <source>语言</source>
-        <translation>Language</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1882"/>
-        <source>简体中文</source>
-        <translation>Simplified Chinese</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1887"/>
-        <source>字体</source>
-        <translation>Font</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1898"/>
-        <source>字号</source>
-        <translation>Font Size</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1916"/>
-        <source>工具栏透明度</source>
-        <translation>Toolbar opacity</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1935"/>
-        <source>Qt Quick Style</source>
-        <translation>Qt Quick Style</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1949"/>
-        <source>样式变更将在下次启动 GeoReader 时生效。</source>
-        <translation>The new style will take effect after restarting GeoReader.</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1964"/>
-        <source>快捷键</source>
-        <translation>Shortcuts</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1971"/>
-        <source>打开文件</source>
-        <translation>Open Files</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1974"/>
-        <source>平移</source>
-        <translation>Pan</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1975"/>
-        <source>适合范围</source>
-        <translation>Fit to Layer</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="1996"/>
-        <source>恢复默认快捷键</source>
-        <translation>Restore Default Shortcuts</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="2021"/>
-        <source>版权声明</source>
-        <translation>Copyright Notice</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="2027"/>
-        <source>本APP由西北大学谭振宇团队开发。用户可以免费分发和使用；商业使用必须获得作者授权。</source>
-        <translation>GeoReader is developed by Zhenyu Tan&apos;s team at Northwest University. Users may freely use and redistribute it; commercial use requires the author&apos;s authorization.</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="2054"/>
-        <source>Column %1, Row %2</source>
-        <translation>Column %1, Row %2</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="2146"/>
-        <source>图层元信息</source>
-        <translation>Layer Metadata</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="2295"/>
+        <location filename="../src/MainWindow.cpp" line="1061"/>
+        <location filename="../src/MainWindow.cpp" line="1987"/>
         <source>属性表</source>
         <translation>Attribute Table</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2337"/>
-        <source>查询列</source>
-        <translation>Search Column</translation>
+        <location filename="../src/MainWindow.cpp" line="1067"/>
+        <location filename="../src/MainWindow.cpp" line="1738"/>
+        <source>移除图层</source>
+        <translation>Remove Layer</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2349"/>
-        <source>输入属性值（包含匹配）</source>
-        <translation>Enter a value (contains match)</translation>
+        <location filename="../src/MainWindow.cpp" line="1100"/>
+        <source>查询位置</source>
+        <translation>Query Location</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2355"/>
-        <source>查询</source>
-        <translation>Search</translation>
+        <location filename="../src/MainWindow.cpp" line="1104"/>
+        <source>移动鼠标，实时读取所有可见栅格像元。</source>
+        <translation>Move the pointer to inspect pixels in every visible raster.</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2361"/>
-        <source>清除</source>
-        <translation>Clear</translation>
+        <location filename="../src/MainWindow.cpp" line="1113"/>
+        <source>可见栅格像元</source>
+        <translation>Visible Raster Pixels</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2512"/>
-        <source>显示 %1 / %2 个要素</source>
-        <translation>Showing %1 of %2 features</translation>
+        <location filename="../src/MainWindow.cpp" line="1144"/>
+        <source>查询图层</source>
+        <translation>Query Layer</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2577"/>
-        <source>导入多维数据</source>
-        <translation>Import Multidimensional Data</translation>
+        <location filename="../src/MainWindow.cpp" line="1166"/>
+        <source>要素属性</source>
+        <translation>Feature Attributes</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2603"/>
-        <location filename="../qml/Main.qml" line="2825"/>
-        <source>取消</source>
-        <translation>Cancel</translation>
+        <location filename="../src/MainWindow.cpp" line="1202"/>
+        <source>外观与主题</source>
+        <translation>Appearance and Theme</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2627"/>
+        <location filename="../src/MainWindow.cpp" line="1238"/>
+        <source>工具栏磨砂浓度</source>
+        <translation>Toolbar Frosted Glass Intensity</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1288"/>
+        <source>关于</source>
+        <translation>About</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1315"/>
+        <source>导入多维数据 — %1</source>
+        <translation>Import Multidimensional Data — %1</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1323"/>
+        <source>选择要显示的变量、X/Y 维以及其余维度的切片。</source>
+        <translation>Select the variable, X/Y dimensions, and slices for the remaining dimensions.</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1335"/>
         <source>变量</source>
         <translation>Variable</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2647"/>
-        <source>数据类型</source>
-        <translation>Data Type</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="2654"/>
-        <source>单位</source>
-        <translation>Unit</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="2671"/>
-        <source>空间维与坐标解释</source>
-        <translation>Spatial Dimensions and Coordinate Interpretation</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="2680"/>
+        <location filename="../src/MainWindow.cpp" line="1338"/>
         <source>X 维</source>
         <translation>X Dimension</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2690"/>
+        <location filename="../src/MainWindow.cpp" line="1339"/>
         <source>Y 维</source>
         <translation>Y Dimension</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2700"/>
-        <source>坐标模式</source>
-        <translation>Coordinate Mode</translation>
+        <location filename="../src/MainWindow.cpp" line="1341"/>
+        <source>自动识别</source>
+        <translation>Auto Detect</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2709"/>
-        <source>自动（采用文件元数据）</source>
-        <translation>Automatic (use file metadata)</translation>
-    </message>
-    <message>
-        <location filename="../qml/Main.qml" line="2710"/>
+        <location filename="../src/MainWindow.cpp" line="1342"/>
         <source>地理坐标</source>
         <translation>Geographic Coordinates</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2711"/>
+        <location filename="../src/MainWindow.cpp" line="1343"/>
         <source>投影坐标</source>
         <translation>Projected Coordinates</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2712"/>
-        <source>像素坐标（不显示底图）</source>
-        <translation>Pixel Coordinates (no basemap)</translation>
+        <location filename="../src/MainWindow.cpp" line="1344"/>
+        <source>像素坐标</source>
+        <translation>Pixel Coordinates</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2715"/>
+        <location filename="../src/MainWindow.cpp" line="1345"/>
+        <source>坐标模式</source>
+        <translation>Coordinate Mode</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1348"/>
         <source>源 CRS</source>
         <translation>Source CRS</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2721"/>
-        <source>例如 EPSG:4326 或 EPSG:32648</source>
-        <translation>For example EPSG:4326 or EPSG:32648</translation>
+        <location filename="../src/MainWindow.cpp" line="1422"/>
+        <source>导入</source>
+        <translation>Import</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2730"/>
-        <source>未在文件中声明 CRS 时，GeoReader 不会根据数值范围猜测。投影坐标必须明确指定 CRS；也可以切换到像素坐标模式。</source>
-        <translation>GeoReader does not guess a CRS from value ranges. Projected coordinates require an explicit CRS; alternatively, use pixel coordinate mode.</translation>
+        <location filename="../src/MainWindow.cpp" line="1423"/>
+        <source>取消</source>
+        <translation>Cancel</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2745"/>
-        <source>额外维切片</source>
-        <translation>Additional Dimension Slices</translation>
+        <location filename="../src/MainWindow.cpp" line="1430"/>
+        <source>导入多维数据</source>
+        <translation>Import Multidimensional Data</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2792"/>
-        <source>提示：当前 GDAL 未包含 HDF4 驱动；NetCDF 与 HDF5 不受影响。</source>
-        <translation>Note: this GDAL build has no HDF4 driver. NetCDF and HDF5 are unaffected.</translation>
+        <location filename="../src/MainWindow.cpp" line="1431"/>
+        <source>X 维和 Y 维必须不同。</source>
+        <translation>The X and Y dimensions must be different.</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2820"/>
-        <source>正在建立按需渲染视图…</source>
-        <translation>Preparing the on-demand rendering view…</translation>
+        <location filename="../src/MainWindow.cpp" line="2155"/>
+        <source>%1 个图层 · 点击图层编辑样式</source>
+        <translation>%1 layers · Click a layer to edit its style</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2830"/>
-        <source>添加图层</source>
-        <translation>Add Layer</translation>
+        <location filename="../src/MainWindow.cpp" line="2159"/>
+        <source>移动鼠标，实时读取所有可见栅格像元</source>
+        <translation>Move the pointer to inspect every visible raster pixel</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2853"/>
+        <location filename="../src/MainWindow.cpp" line="2162"/>
+        <source>单击地图要素进行识别；命中要素会高亮</source>
+        <translation>Click a map feature to identify and highlight it</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2165"/>
+        <source>语言、界面、Qlementine 主题与快捷键</source>
+        <translation>Language, interface, Qlementine theme and shortcuts</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1167"/>
+        <source>尚未识别要素</source>
+        <translation>No feature identified yet</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1214"/>
+        <source>语言</source>
+        <translation>Language</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1222"/>
+        <source>字体</source>
+        <translation>Font</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1229"/>
+        <source>字号</source>
+        <translation>Font Size</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1240"/>
+        <source>跟随系统</source>
+        <translation>Follow System</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1241"/>
+        <source>浅色</source>
+        <translation>Light</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1242"/>
+        <source>深色</source>
+        <translation>Dark</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1249"/>
+        <source>Qlementine 主题</source>
+        <translation>Qlementine Theme</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1258"/>
+        <source>快捷键</source>
+        <translation>Shortcuts</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1276"/>
+        <source>恢复默认快捷键</source>
+        <translation>Restore Default Shortcuts</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1523"/>
+        <source>未知坐标系</source>
+        <translation>Unknown CRS</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2154"/>
+        <source>尚未加载空间数据</source>
+        <translation>No spatial data loaded</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1549"/>
+        <source>选择一个图层以编辑样式</source>
+        <translation>Select a layer to edit its style</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1638"/>
+        <source>波段 %1</source>
+        <translation>Band %1</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1713"/>
         <source>选择线颜色</source>
         <translation>Choose Stroke Color</translation>
     </message>
     <message>
-        <location filename="../qml/Main.qml" line="2853"/>
+        <location filename="../src/MainWindow.cpp" line="1713"/>
         <source>选择填充颜色</source>
         <translation>Choose Fill Color</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1739"/>
+        <source>确定从当前项目移除“%1”吗？</source>
+        <translation>Remove “%1” from the current project?</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1872"/>
+        <source>%1 · FID %2</source>
+        <translation>%1 · FID %2</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1906"/>
+        <source>像元 %1</source>
+        <translation>Pixel %1</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1916"/>
+        <source>经度 %1 · 纬度 %2</source>
+        <translation>Longitude %1 · Latitude %2</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1946"/>
+        <source>图层元数据 — %1</source>
+        <translation>Layer Metadata — %1</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1952"/>
+        <source>属性</source>
+        <translation>Property</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1952"/>
+        <location filename="../src/MainWindow.cpp" line="2101"/>
+        <location filename="../src/MainWindow.cpp" line="2102"/>
+        <source>值</source>
+        <translation>Value</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1975"/>
+        <location filename="../src/MainWindow.cpp" line="2054"/>
+        <location filename="../src/MainWindow.cpp" line="2090"/>
+        <source>关闭</source>
+        <translation>Close</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1994"/>
+        <source>属性表 — %1</source>
+        <translation>Attribute Table — %1</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2001"/>
+        <source>输入属性值（包含匹配）</source>
+        <translation>Enter a value (contains match)</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2002"/>
+        <source>查询</source>
+        <translation>Search</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2003"/>
+        <source>清除</source>
+        <translation>Clear</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2004"/>
+        <source>查询列</source>
+        <translation>Search Column</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="736"/>
+        <location filename="../src/MainWindow.cpp" line="2077"/>
+        <location filename="../src/MainWindow.cpp" line="2093"/>
+        <source>打开空间数据</source>
+        <translation>Open Spatial Data</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="744"/>
+        <location filename="../src/MainWindow.cpp" line="2097"/>
+        <source>支持 Shapefile、GeoJSON、GeoPackage 和 GeoTIFF</source>
+        <translation>Supports Shapefile, GeoJSON, GeoPackage and GeoTIFF</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="747"/>
+        <location filename="../src/MainWindow.cpp" line="2100"/>
+        <source>选择文件…</source>
+        <translation>Choose Files…</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1867"/>
+        <source>请选择一个矢量图层</source>
+        <translation>Select a vector layer</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="1868"/>
+        <source>在地图上单击以查询要素</source>
+        <translation>Click the map to inspect a feature</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2079"/>
+        <source>打开文件 (%1)</source>
+        <translation>Open Files (%1)</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2080"/>
+        <source>放大</source>
+        <translation>Zoom In</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2081"/>
+        <source>缩小</source>
+        <translation>Zoom Out</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2082"/>
+        <source>适合所选图层范围</source>
+        <translation>Fit to Selected Layer</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2083"/>
+        <source>平移</source>
+        <translation>Pan</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2084"/>
+        <source>移动地图（启用后按住左键拖动）</source>
+        <translation>Pan map (enable, then drag with the left mouse button)</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2085"/>
+        <source>矩形框选缩放（Esc 取消）</source>
+        <translation>Zoom to Rectangle (Esc to cancel)</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2086"/>
+        <source>图层管理</source>
+        <translation>Layers</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2087"/>
+        <source>栅格值查看</source>
+        <translation>Identify Raster Values</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2088"/>
+        <source>矢量属性查看</source>
+        <translation>Identify Vector Features</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2089"/>
+        <source>设置</source>
+        <translation>Settings</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2101"/>
+        <source>图层 / 波段</source>
+        <translation>Layer / Band</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2102"/>
+        <source>字段</source>
+        <translation>Fields</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2104"/>
+        <source>GeoReader %1 · Qt Widgets · Qlementine · Mapnik · GDAL</source>
+        <translation>GeoReader %1 · Qt Widgets · Qlementine · Mapnik · GDAL</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2107"/>
+        <source>本APP由西北大学谭振宇团队开发。用户可以免费分发和使用；商业使用必须获得作者授权。</source>
+        <translation>GeoReader is developed by Zhenyu Tan&apos;s team at Northwest University. Users may freely use and redistribute it; commercial use requires the author&apos;s authorization.</translation>
     </message>
 </context>
 <context>
     <name>MapCanvas</name>
     <message>
-        <location filename="../src/MapCanvas.cpp" line="498"/>
+        <location filename="../src/MapCanvas.cpp" line="488"/>
         <source>Tiles © Esri — Esri, Maxar, Earthstar Geographics, and the GIS User Community</source>
         <translation>Tiles © Esri — Esri, Maxar, Earthstar Geographics, and the GIS User Community</translation>
     </message>
     <message>
-        <location filename="../src/MapCanvas.cpp" line="502"/>
+        <location filename="../src/MapCanvas.cpp" line="492"/>
         <source>Map data © OpenStreetMap contributors, SRTM · Map style © OpenTopoMap (CC-BY-SA)</source>
         <translation>Map data © OpenStreetMap contributors, SRTM · Map style © OpenTopoMap (CC-BY-SA)</translation>
     </message>
     <message>
-        <location filename="../src/MapCanvas.cpp" line="505"/>
+        <location filename="../src/MapCanvas.cpp" line="495"/>
         <source>© OpenStreetMap contributors</source>
         <translation>© OpenStreetMap contributors</translation>
+    </message>
+</context>
+<context>
+    <name>QObject</name>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="329"/>
+        <source>栅格 · %1 波段</source>
+        <translation>Raster · %1 bands</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="331"/>
+        <source>点</source>
+        <translation>Point</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="333"/>
+        <source>面</source>
+        <translation>Polygon</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="333"/>
+        <source>线</source>
+        <translation>Line</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="334"/>
+        <source>矢量 · %1</source>
+        <translation>Vector · %1</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="340"/>
+        <source>图层</source>
+        <translation>Layers</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="341"/>
+        <source>栅格值</source>
+        <translation>Raster Values</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="342"/>
+        <source>矢量属性</source>
+        <translation>Vector Attributes</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="343"/>
+        <source>设置</source>
+        <translation>Settings</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="352"/>
+        <source>打开文件</source>
+        <translation>Open Files</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="354"/>
+        <source>放大</source>
+        <translation>Zoom In</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="356"/>
+        <source>缩小</source>
+        <translation>Zoom Out</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="358"/>
+        <source>平移</source>
+        <translation>Pan</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="360"/>
+        <source>适合范围</source>
+        <translation>Fit to Layer</translation>
+    </message>
+    <message>
+        <location filename="../src/MainWindow.cpp" line="2045"/>
+        <source>显示 %1 / %2 个要素</source>
+        <translation>Showing %1 of %2 features</translation>
+    </message>
+</context>
+<context>
+    <name>QShortcut</name>
+    <message>
+        <location filename="../build/_deps/qlementine-src/lib/src/utils/PrimitiveUtils.cpp" line="1265"/>
+        <source>Left</source>
+        <translation>Left</translation>
+    </message>
+    <message>
+        <location filename="../build/_deps/qlementine-src/lib/src/utils/PrimitiveUtils.cpp" line="1266"/>
+        <source>Right</source>
+        <translation>Right</translation>
+    </message>
+    <message>
+        <location filename="../build/_deps/qlementine-src/lib/src/utils/PrimitiveUtils.cpp" line="1267"/>
+        <source>Up</source>
+        <translation>Up</translation>
+    </message>
+    <message>
+        <location filename="../build/_deps/qlementine-src/lib/src/utils/PrimitiveUtils.cpp" line="1268"/>
+        <source>Down</source>
+        <translation>Down</translation>
     </message>
 </context>
 </TS>

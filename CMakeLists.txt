@@ -12,8 +12,14 @@ project(GeoReader VERSION 2.0.0 LANGUAGES CXX)
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
+if(POLICY CMP0207)
+    # Keep Qt's runtime-dependency deployment matching deterministic on
+    # CMake 4.1+ and avoid one warning for every normalized library path.
+    cmake_policy(SET CMP0207 NEW)
+endif()
 
 include(GNUInstallDirs)
+include(FetchContent)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -31,9 +37,7 @@ find_package(Qt6 6.8 REQUIRED COMPONENTS
     Core
     Gui
     Network
-    Qml
-    Quick
-    QuickControls2
+    Svg
     Widgets
     Concurrent
     LinguistTools
@@ -45,6 +49,22 @@ if(UNIX AND NOT APPLE)
     find_package(Qt6 6.8 REQUIRED COMPONENTS DBus)
 endif()
 find_package(GDAL 3.8 CONFIG REQUIRED)
+
+# Qlementine is the native QStyle used by the Qt Widgets interface. Pin the
+# stable release so every platform receives the same metrics and controls.
+FetchContent_Declare(Qlementine
+    URL "https://codeload.github.com/oclero/qlementine/tar.gz/refs/tags/v1.4.2"
+    URL_HASH
+        "SHA256=ed5196e6e04614db65f9a5f813eb35bf05076b7bce07892db33e85cf7b598616"
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    # Populate first and add the dependency manually below so Qlementine's
+    # developer headers, static archive and CMake package are not installed
+    # into GeoReader end-user packages.
+    SOURCE_SUBDIR "__georeader_populate_only"
+)
+FetchContent_MakeAvailable(Qlementine)
+add_subdirectory("${qlementine_SOURCE_DIR}"
+                 "${qlementine_BINARY_DIR}" EXCLUDE_FROM_ALL)
 
 set(_georeader_dependency_roots)
 if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
@@ -220,12 +240,10 @@ endforeach()
 
 qt_standard_project_setup(REQUIRES 6.8)
 
-# Qt 默认会按 QML URI 在构建根目录创建 GeoReader/。Linux 可执行文件
-# 同样名为 GeoReader，因此把所有 QML 工具产物集中到独立的 qml/ 目录。
-set(QT_QML_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/qml")
-
 qt_add_executable(GeoReader
     src/main.cpp
+    src/MainWindow.cpp
+    src/MainWindow.h
     src/AppController.cpp
     src/AppController.h
     src/AttributeTableModel.cpp
@@ -244,20 +262,31 @@ if(GEOREADER_BUILD_TESTS)
     enable_testing()
     qt_add_executable(GeoReaderModelTests
         tests/ModelTests.cpp
+        src/AppController.cpp
+        src/AppController.h
         src/AttributeTableModel.cpp
         src/AttributeTableModel.h
         src/LayerModel.cpp
         src/LayerModel.h
+        src/MultidimensionalDataset.cpp
+        src/MultidimensionalDataset.h
+        src/RasterRenderer.cpp
+        src/RasterRenderer.h
     )
     target_include_directories(GeoReaderModelTests PRIVATE src)
     target_compile_definitions(GeoReaderModelTests PRIVATE
-        GEOREADER_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+        GEOREADER_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
+        GEOREADER_VERSION="${PROJECT_VERSION}")
     target_link_libraries(GeoReaderModelTests PRIVATE
         Qt6::Core
         Qt6::Gui
+        Qt6::Widgets
+        Qt6::Concurrent
         GDAL::GDAL
     )
     add_test(NAME GeoReaderModelTests COMMAND GeoReaderModelTests)
+    set_tests_properties(GeoReaderModelTests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     qt_add_executable(GeoReaderInteractionTests
         tests/MapCanvasInteractionTests.cpp
@@ -278,7 +307,7 @@ if(GEOREADER_BUILD_TESTS)
         Qt6::Core
         Qt6::Gui
         Qt6::Network
-        Qt6::Quick
+        Qt6::Widgets
         Qt6::Concurrent
         GDAL::GDAL
         "${ICU_UC_LIBRARY}"
@@ -306,17 +335,6 @@ if(GEOREADER_BUILD_TESTS)
              COMMAND GeoReaderMultidimensionalTests)
 endif()
 
-qt_add_qml_module(GeoReader
-    URI GeoReader
-    VERSION 1.0
-    QML_FILES
-        qml/Main.qml
-        qml/components/AppIcon.qml
-        qml/components/EmptyState.qml
-        qml/components/FloatingPanel.qml
-        qml/components/ToolRailButton.qml
-)
-
 qt_add_translations(GeoReader
     TS_FILES translations/georeader_en.ts
     RESOURCE_PREFIX "/i18n"
@@ -328,6 +346,25 @@ qt_add_resources(GeoReader "georeader_icons"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons"
     FILES
         resources/icons/georeader.svg
+        resources/icons/ui/close.svg
+        resources/icons/ui/fit.svg
+        resources/icons/ui/folder.svg
+        resources/icons/ui/layers.svg
+        resources/icons/ui/pan.svg
+        resources/icons/ui/raster.svg
+        resources/icons/ui/rectangle.svg
+        resources/icons/ui/settings.svg
+        resources/icons/ui/trash.svg
+        resources/icons/ui/vector.svg
+        resources/icons/ui/zoom-in.svg
+        resources/icons/ui/zoom-out.svg
+)
+qt_add_resources(GeoReader "georeader_themes"
+    PREFIX "/themes"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/themes"
+    FILES
+        resources/themes/qlementine-dark.json
+        resources/themes/qlementine-light.json
 )
 set_property(TARGET GeoReader APPEND PROPERTY
     QT_EXCLUDE_SOURCES_FROM_TRANSLATION
@@ -364,11 +401,10 @@ target_link_libraries(GeoReader PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Network
-    Qt6::Qml
-    Qt6::Quick
-    Qt6::QuickControls2
+    Qt6::Svg
     Qt6::Widgets
     Qt6::Concurrent
+    qlementine
     GDAL::GDAL
     "${ICU_UC_LIBRARY}"
     "${ICU_I18N_LIBRARY}"
@@ -465,6 +501,15 @@ else()
 endif()
 
 if(NOT APPLE)
+    # Install scripts run in a fresh CMake policy scope. Repeat CMP0207 there
+    # so Qt's dependency scanner does not emit one warning per normalized
+    # runtime path when packages are staged with CMake 4.1+.
+    install(CODE [[
+        if(POLICY CMP0207)
+            set(CMAKE_POLICY_DEFAULT_CMP0207 NEW)
+            cmake_policy(SET CMP0207 NEW)
+        endif()
+    ]])
     set(_georeader_qt_deploy_options)
     if(UNIX AND Qt6_VERSION VERSION_GREATER_EQUAL 6.10)
         # Desktop integration plugins may be installed beside Qt's own
@@ -486,7 +531,7 @@ if(NOT APPLE)
         # Plugin selection arguments were added to the deployment generator
         # in Qt 6.10. Qt 6.8 still exposes imported targets for the plugins we
         # require, so install those explicitly and let the regular Qt deploy
-        # script collect the remaining QML modules, plugins and libraries.
+        # script collect the remaining plugins and libraries.
         set(_georeader_legacy_linux_platform_plugins
             Qt6::QOffscreenIntegrationPlugin
             Qt6::QWaylandIntegrationPlugin)
@@ -516,7 +561,7 @@ if(NOT APPLE)
         install(IMPORTED_RUNTIME_ARTIFACTS Qt6::DBus
             LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}")
     endif()
-    qt_generate_deploy_qml_app_script(
+    qt_generate_deploy_app_script(
         TARGET GeoReader
         OUTPUT_SCRIPT GEOREADER_QT_DEPLOY_SCRIPT
         NO_UNSUPPORTED_PLATFORM_ERROR

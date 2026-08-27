@@ -259,9 +259,13 @@ void LayerModel::setVectorStyle(int row, const QColor &lineColor,
     if (row < 0 || row >= m_layers.size())
         return;
     auto &layer = m_layers[row];
+    const double clampedWidth = std::clamp(lineWidth, 0.25, 12.0);
+    if (layer.lineColor == lineColor && layer.fillColor == fillColor
+        && qFuzzyCompare(layer.lineWidth, clampedWidth))
+        return;
     layer.lineColor = lineColor;
     layer.fillColor = fillColor;
-    layer.lineWidth = std::clamp(lineWidth, 0.25, 12.0);
+    layer.lineWidth = clampedWidth;
     emit dataChanged(index(row), index(row), {LineColorRole, FillColorRole, LineWidthRole});
     advanceRevision();
     emit renderingChanged();
@@ -279,21 +283,34 @@ void LayerModel::setRasterStyle(int row, const QString &mode, int redBand,
     const auto clampBand = [&layer](int band) {
         return std::clamp(band, 1, std::max(1, layer.bandCount));
     };
-    layer.rasterMode = mode;
-    layer.redBand = clampBand(redBand);
-    layer.greenBand = clampBand(greenBand);
-    layer.blueBand = clampBand(blueBand);
-    layer.grayBand = clampBand(grayBand);
-    layer.colorRamp = colorRamp;
-    layer.colorRampReversed = colorRampReversed;
+    const int normalizedRed = clampBand(redBand);
+    const int normalizedGreen = clampBand(greenBand);
+    const int normalizedBlue = clampBand(blueBand);
+    const int normalizedGray = clampBand(grayBand);
     const QStringList supportedStretchModes {
         QStringLiteral("minmax"),
         QStringLiteral("percent_clip"),
         QStringLiteral("standard_deviation"),
         QStringLiteral("histogram_equalization")
     };
-    layer.stretchMode = supportedStretchModes.contains(stretchMode)
+    const QString normalizedStretch = supportedStretchModes.contains(stretchMode)
         ? stretchMode : QStringLiteral("minmax");
+    if (layer.rasterMode == mode && layer.redBand == normalizedRed
+        && layer.greenBand == normalizedGreen
+        && layer.blueBand == normalizedBlue
+        && layer.grayBand == normalizedGray
+        && layer.colorRamp == colorRamp
+        && layer.colorRampReversed == colorRampReversed
+        && layer.stretchMode == normalizedStretch)
+        return;
+    layer.rasterMode = mode;
+    layer.redBand = normalizedRed;
+    layer.greenBand = normalizedGreen;
+    layer.blueBand = normalizedBlue;
+    layer.grayBand = normalizedGray;
+    layer.colorRamp = colorRamp;
+    layer.colorRampReversed = colorRampReversed;
+    layer.stretchMode = normalizedStretch;
     emit dataChanged(index(row), index(row),
                      {RasterModeRole, RedBandRole, GreenBandRole, BlueBandRole,
                       GrayBandRole, ColorRampRole, ColorRampReversedRole,
@@ -313,6 +330,9 @@ void LayerModel::setBandRange(int row, int band, double minimum,
     const int indexInLayer = band - 1;
     if (indexInLayer < 0 || indexInLayer >= layer.bandMinimums.size()
         || indexInLayer >= layer.bandMaximums.size())
+        return;
+    if (qFuzzyCompare(layer.bandMinimums.at(indexInLayer), minimum)
+        && qFuzzyCompare(layer.bandMaximums.at(indexInLayer), maximum))
         return;
 
     layer.bandMinimums[indexInLayer] = minimum;
@@ -354,13 +374,18 @@ void LayerModel::setRasterNoData(int row, bool enabled, const QString &value)
     const QString normalized = value.trimmed().toLower();
     bool numericValue = false;
     normalized.toDouble(&numericValue);
-    if (enabled && normalized != QStringLiteral("nan") && !numericValue)
+    const bool validValue = normalized == QStringLiteral("nan")
+        || numericValue;
+    if (enabled && !validValue)
         return;
 
     auto &layer = m_layers[row];
+    const QString storedValue = validValue ? normalized
+                                           : QStringLiteral("nan");
+    if (layer.noDataEnabled == enabled && layer.noDataValue == storedValue)
+        return;
     layer.noDataEnabled = enabled;
-    layer.noDataValue = normalized.isEmpty() ? QStringLiteral("nan")
-                                              : normalized;
+    layer.noDataValue = storedValue;
     emit dataChanged(index(row), index(row),
                      {NoDataEnabledRole, NoDataValueRole});
     advanceRevision();
@@ -373,8 +398,10 @@ void LayerModel::moveLayer(int from, int to)
         || to >= m_layers.size() || from == to) {
         return;
     }
+    if (m_layers.at(from).datasetId != m_layers.at(to).datasetId)
+        return;
     // beginMoveRows 的目标位置使用“插入前”坐标；向下移动时需跨过源行。
-    // QML、选择索引和渲染快照因此会收到标准模型移动通知，而非整表重置。
+    // Widgets 列表、选择索引和渲染快照因此会收到标准模型移动通知，而非整表重置。
     const int destination = to > from ? to + 1 : to;
     beginMoveRows({}, from, from, {}, destination);
     m_layers.move(from, to);

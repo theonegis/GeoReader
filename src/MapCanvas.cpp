@@ -4,14 +4,18 @@
 #include <QCursor>
 #include <QDebug>
 #include <QFileInfo>
-#include <QHoverEvent>
+#include <QFontMetrics>
+#include <QGestureEvent>
 #include <QMouseEvent>
 #include <QMutexLocker>
 #include <QNetworkDiskCache>
 #include <QNetworkReply>
+#include <QNativeGestureEvent>
 #include <QPainter>
 #include <QPainterPath>
-#include <QQuickWindow>
+#include <QPaintEvent>
+#include <QPinchGesture>
+#include <QResizeEvent>
 #include <QStandardPaths>
 #include <QThread>
 #include <QWheelEvent>
@@ -42,20 +46,6 @@ namespace {
 constexpr double kMaxLatitude = 85.05112878;
 constexpr double kEarthRadius = 6378137.0;
 constexpr int kTileSize = 256;
-
-QQuickItem *deepestItemAt(QQuickItem *root, const QPointF &scenePosition)
-{
-    QQuickItem *current = root;
-    while (current) {
-        const QPointF localPosition = current->mapFromScene(scenePosition);
-        QQuickItem *child =
-            current->childAt(localPosition.x(), localPosition.y());
-        if (!child)
-            break;
-        current = child;
-    }
-    return current;
-}
 
 int maximumTileZoom(const QString &baseMap)
 {
@@ -422,14 +412,14 @@ TemporaryVrt createDisplayVrt(const LayerSnapshot &layer, quint64 generation)
 
 } // namespace
 
-MapCanvas::MapCanvas(QQuickItem *parent)
-    : QQuickPaintedItem(parent)
+MapCanvas::MapCanvas(QWidget *parent)
+    : QWidget(parent)
 {
-    setAcceptedMouseButtons(Qt::LeftButton);
-    setAcceptHoverEvents(true);
-    setAntialiasing(false);
-    setMipmap(false);
-    setOpaquePainting(true);
+    setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
+    setAttribute(Qt::WA_OpaquePaintEvent);
+    setAutoFillBackground(false);
+    grabGesture(Qt::PinchGesture);
     updateCursor();
 
     auto *diskCache = new QNetworkDiskCache(&m_network);
@@ -610,7 +600,8 @@ MapViewport MapCanvas::currentViewport() const
 {
     if (m_coordinateMode == QStringLiteral("pixel")) {
         const QPointF topLeft = screenToLonLat({0.0, 0.0});
-        const QPointF bottomRight = screenToLonLat({width(), height()});
+        const QPointF bottomRight = screenToLonLat(
+            {static_cast<qreal>(width()), static_cast<qreal>(height())});
         return {
             QStringLiteral("pixel"),
             std::max(1, static_cast<int>(std::round(width()))),
@@ -619,7 +610,8 @@ MapViewport MapCanvas::currentViewport() const
         };
     }
     const QPointF topLeft = screenToLonLat({0.0, 0.0});
-    const QPointF bottomRight = screenToLonLat({width(), height()});
+    const QPointF bottomRight = screenToLonLat(
+        {static_cast<qreal>(width()), static_cast<qreal>(height())});
     const QPointF min = lonLatToMercator(topLeft.x(), bottomRight.y());
     const QPointF max = lonLatToMercator(bottomRight.x(), topLeft.y());
     return {
@@ -630,8 +622,11 @@ MapViewport MapCanvas::currentViewport() const
     };
 }
 
-void MapCanvas::paint(QPainter *painter)
+void MapCanvas::paintEvent(QPaintEvent *event)
 {
+    Q_UNUSED(event)
+    QPainter widgetPainter(this);
+    QPainter *painter = &widgetPainter;
     QImage overlay;
     MapViewport overlayViewport;
     {
@@ -640,7 +635,7 @@ void MapCanvas::paint(QPainter *painter)
         overlayViewport = m_overlayViewport;
     }
 
-    painter->fillRect(boundingRect(), QColor(QStringLiteral("#E8EDF2")));
+    painter->fillRect(rect(), QColor(QStringLiteral("#E8EDF2")));
     drawBaseMap(painter);
     if (!overlay.isNull() && overlayViewport.isValid()) {
         const MapViewport viewport = currentViewport();
@@ -677,12 +672,44 @@ void MapCanvas::paint(QPainter *painter)
         painter->drawRoundedRect(m_selectionRectangle.normalized(), 3.0, 3.0);
         painter->restore();
     }
+
+    painter->save();
+    QFont attributionFont = painter->font();
+    attributionFont.setPixelSize(10);
+    painter->setFont(attributionFont);
+    const QString attribution = baseMapAttribution();
+    if (attribution.isEmpty()) {
+        painter->restore();
+        return;
+    }
+    const QFontMetrics metrics(attributionFont);
+    const QRect textBounds = metrics.boundingRect(attribution);
+    const QRectF badge(width() - m_attributionRightInset
+                           - textBounds.width() - 18.0,
+                       height() - textBounds.height() - 14.0,
+                       textBounds.width() + 10.0,
+                       textBounds.height() + 6.0);
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(QColor(255, 255, 255, 205));
+    painter->drawRoundedRect(badge, 4.0, 4.0);
+    painter->setPen(QColor(QStringLiteral("#4C5663")));
+    painter->drawText(badge, Qt::AlignCenter, attribution);
+    painter->restore();
+}
+
+void MapCanvas::setAttributionRightInset(int inset)
+{
+    const int normalized = std::max(0, inset);
+    if (m_attributionRightInset == normalized)
+        return;
+    m_attributionRightInset = normalized;
+    update();
 }
 
 void MapCanvas::drawBaseMap(QPainter *painter)
 {
     if (m_coordinateMode == QStringLiteral("pixel")) {
-        painter->fillRect(boundingRect(),
+        painter->fillRect(rect(),
                           QColor(QStringLiteral("#20252B")));
         constexpr int gridSize = 32;
         painter->setPen(QPen(QColor(255, 255, 255, 10), 1.0));
@@ -872,6 +899,7 @@ void MapCanvas::setRectangleZoomActive(bool active)
     m_rectangleZoomActive = active;
     m_selectingRectangle = false;
     m_dragging = false;
+    m_panPressActive = false;
     m_selectionRectangle = {};
     updateCursor();
     emit rectangleZoomActiveChanged();
@@ -882,13 +910,15 @@ void MapCanvas::setInspectionMode(const QString &mode)
 {
     const auto normalized =
         mode == QStringLiteral("vector") || mode == QStringLiteral("raster")
+                || mode == QStringLiteral("pan")
         ? mode
-        : QStringLiteral("pan");
+        : QStringLiteral("browse");
     if (m_inspectionMode == normalized)
         return;
 
     m_inspectionMode = normalized;
     m_dragging = false;
+    m_panPressActive = false;
     updateCursor();
     emit inspectionModeChanged();
 }
@@ -1002,10 +1032,42 @@ void MapCanvas::drawSelectedFeature(QPainter *painter) const
     painter->restore();
 }
 
-void MapCanvas::geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry)
+bool MapCanvas::event(QEvent *event)
 {
-    QQuickPaintedItem::geometryChange(newGeometry, oldGeometry);
-    if (newGeometry.size() != oldGeometry.size())
+    if (event->type() == QEvent::NativeGesture) {
+        auto *gesture = static_cast<QNativeGestureEvent *>(event);
+        if (gesture->gestureType() == Qt::ZoomNativeGesture) {
+            const double delta = std::clamp(gesture->value() * 3.0,
+                                            -1.0, 1.0);
+            if (!qFuzzyIsNull(delta))
+                zoomBy(delta);
+            gesture->accept();
+            return true;
+        }
+    } else if (event->type() == QEvent::Gesture) {
+        auto *gestureEvent = static_cast<QGestureEvent *>(event);
+        if (auto *pinch = static_cast<QPinchGesture *>(
+                gestureEvent->gesture(Qt::PinchGesture))) {
+            if (pinch->changeFlags().testFlag(
+                    QPinchGesture::ScaleFactorChanged)) {
+                const double previous = pinch->lastScaleFactor();
+                const double current = pinch->scaleFactor();
+                if (previous > 0.0 && current > 0.0) {
+                    zoomBy(std::clamp(std::log2(current / previous) * 2.0,
+                                      -1.0, 1.0));
+                }
+            }
+            gestureEvent->accept(pinch);
+            return true;
+        }
+    }
+    return QWidget::event(event);
+}
+
+void MapCanvas::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    if (event->size() != event->oldSize())
         scheduleOverlayRender();
 }
 
@@ -1015,7 +1077,7 @@ void MapCanvas::mousePressEvent(QMouseEvent *event)
     m_lastMousePosition = event->position();
     m_dragging = false;
 
-    if (m_rectangleZoomActive) {
+    if (m_rectangleZoomActive && event->button() == Qt::LeftButton) {
         m_selectingRectangle = true;
         m_selectionRectangle =
             QRectF(event->position(), event->position());
@@ -1025,12 +1087,14 @@ void MapCanvas::mousePressEvent(QMouseEvent *event)
         return;
     }
 
-    if (m_inspectionMode != QStringLiteral("pan")) {
+    if (m_inspectionMode != QStringLiteral("pan")
+        || event->button() != Qt::LeftButton) {
         updateMouseCoordinate(event->position());
         event->accept();
         return;
     }
 
+    m_panPressActive = true;
     setCursor(Qt::ClosedHandCursor);
     event->accept();
 }
@@ -1046,8 +1110,13 @@ void MapCanvas::mouseMoveEvent(QMouseEvent *event)
         return;
     }
 
-    if (m_inspectionMode != QStringLiteral("pan")) {
+    if (m_inspectionMode != QStringLiteral("pan")
+        || !m_panPressActive
+        || !(event->buttons() & Qt::LeftButton)) {
+        m_dragging = false;
+        m_panPressActive = false;
         updateMouseCoordinate(event->position());
+        updateCursor();
         event->accept();
         return;
     }
@@ -1083,26 +1152,22 @@ void MapCanvas::mouseReleaseEvent(QMouseEvent *event)
         return;
     }
 
+    const bool wasDragging = m_dragging;
+    m_dragging = false;
+    m_panPressActive = false;
     updateCursor();
-    if (!m_dragging) {
+    if (!wasDragging && event->button() == Qt::LeftButton) {
         const QPointF coordinate = screenToLonLat(event->position());
         emit mapClicked(coordinate.x(), coordinate.y());
     }
     event->accept();
 }
 
-void MapCanvas::hoverMoveEvent(QHoverEvent *event)
-{
-    updateMouseCoordinate(event->position());
-    event->accept();
-}
-
 void MapCanvas::wheelEvent(QWheelEvent *event)
 {
-    // 滚轮事件可能在 TableView/ScrollView 到达边界后继续传递到下层
-    // QQuickItem。只有鼠标位置最上层的可视项属于 MapCanvas 时才缩放，
-    // 从源头避免悬浮面板、属性表和工具栏上的滚轮影响地图。
-    if (!m_wheelZoomEnabled || !isTopmostMapItemAt(event->position())) {
+    // Widgets 会把滚轮交给鼠标所在的最上层控件；额外开关供悬浮控件
+    // 在需要时显式阻止滚轮缩放。
+    if (!m_wheelZoomEnabled) {
         event->ignore();
         return;
     }
@@ -1121,22 +1186,6 @@ void MapCanvas::setWheelZoomEnabled(bool enabled)
     emit wheelZoomEnabledChanged();
 }
 
-bool MapCanvas::isTopmostMapItemAt(const QPointF &position) const
-{
-    QQuickWindow *quickWindow = window();
-    QQuickItem *root = quickWindow ? quickWindow->contentItem() : nullptr;
-    if (!root)
-        return true;
-
-    const QPointF scenePosition = mapToScene(position);
-    QQuickItem *topmost = deepestItemAt(root, scenePosition);
-    for (QQuickItem *item = topmost; item; item = item->parentItem()) {
-        if (item == this)
-            return true;
-    }
-    return false;
-}
-
 void MapCanvas::updateMouseCoordinate(const QPointF &position)
 {
     const QPointF coordinate = screenToLonLat(position);
@@ -1151,7 +1200,8 @@ void MapCanvas::updateCursor()
         setCursor(Qt::CrossCursor);
         return;
     }
-    if (m_inspectionMode == QStringLiteral("vector")) {
+    if (m_inspectionMode == QStringLiteral("vector")
+        || m_inspectionMode == QStringLiteral("browse")) {
         setCursor(Qt::ArrowCursor);
         return;
     }
