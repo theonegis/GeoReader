@@ -298,6 +298,13 @@ class ReleaseTripletTests(unittest.TestCase):
         ):
             self.assertIn(node24_action, workflow)
 
+    def test_qt_installer_only_requests_downloadable_add_on_modules(self) -> None:
+        workflow = (
+            PROJECT_ROOT / ".github" / "workflows" / "package.yml"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("modules: qtsvg", workflow)
+        self.assertIn("modules: qtwaylandcompositor", workflow)
+
     def test_release_commands_explicitly_target_the_repository(self) -> None:
         workflow = (
             PROJECT_ROOT / ".github" / "workflows" / "package.yml"
