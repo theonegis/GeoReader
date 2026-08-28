@@ -240,6 +240,10 @@ class ReleaseTripletTests(unittest.TestCase):
             "Unexpected LSMinimumSystemVersion",
             "Unbundled macOS dependency",
             "Verified macOS 12 compatibility",
+            "create_dmg_with_retries",
+            "max_attempts=4",
+            'rm -f -- "$local_dmg_path"',
+            "sleep $((attempt * 5))",
         ):
             self.assertIn(expected, package_script)
         self.assertNotIn('$2 == "LC_ID_DYLIB"', package_script)

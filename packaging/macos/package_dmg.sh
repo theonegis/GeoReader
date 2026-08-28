@@ -357,12 +357,43 @@ echo "Verified macOS 12 compatibility for the complete app bundle"
 
 dmg_path="$output_dir/GeoReader-macOS-${architecture}.dmg"
 local_dmg_path="$work_dir/GeoReader-macOS-${architecture}.dmg"
-hdiutil create \
-    -volname "GeoReader" \
-    -srcfolder "$app_path" \
-    -ov \
-    -format UDZO \
-    "$local_dmg_path"
+
+# hdiutil can briefly report "Resource busy" on hosted Apple Silicon runners
+# immediately after codesign has rewritten many files in the bundle.  The app
+# has already passed its signature and compatibility audits at this point, so
+# retry only the image creation operation and discard any partial image first.
+create_dmg_with_retries()
+{
+    local attempt
+    local hdiutil_status=1
+    local max_attempts=4
+
+    for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+        rm -f -- "$local_dmg_path"
+        if hdiutil create \
+            -volname "GeoReader" \
+            -srcfolder "$app_path" \
+            -ov \
+            -format UDZO \
+            "$local_dmg_path"; then
+            return 0
+        else
+            hdiutil_status=$?
+        fi
+
+        if (( attempt == max_attempts )); then
+            break
+        fi
+
+        echo "hdiutil create failed (attempt $attempt/$max_attempts); retrying" >&2
+        sync
+        sleep $((attempt * 5))
+    done
+
+    return "$hdiutil_status"
+}
+
+create_dmg_with_retries
 ditto "$local_dmg_path" "$dmg_path"
 
 echo "Created $dmg_path"
