@@ -7,7 +7,7 @@ if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
         "Minimum macOS version supported by GeoReader")
 endif()
 
-project(GeoReader VERSION 2.0.0 LANGUAGES CXX)
+project(GeoReader VERSION 3.0.0 LANGUAGES CXX)
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
