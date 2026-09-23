@@ -1,64 +1,37 @@
 #pragma once
-
 #include "LayerModel.h"
-
 #include <QAbstractTableModel>
-#include <QStringList>
-#include <QVector>
-
-class AttributeTableModel final : public QAbstractTableModel
-{
-    Q_OBJECT
-    Q_PROPERTY(QString layerName READ layerName NOTIFY layerChanged)
-    Q_PROPERTY(QStringList columns READ columns NOTIFY layerChanged)
-    Q_PROPERTY(int totalCount READ totalCount NOTIFY countsChanged)
-    Q_PROPERTY(int filteredCount READ filteredCount NOTIFY countsChanged)
-    Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorMessageChanged)
-
+class AttributeTableModel : public QAbstractTableModel {
+  Q_OBJECT
+  Q_PROPERTY(QStringList columns READ columns NOTIFY layerChanged)
+  Q_PROPERTY(QString layerName READ layerName NOTIFY layerChanged)
+  Q_PROPERTY(int totalCount READ totalCount NOTIFY layerChanged)
+  Q_PROPERTY(int filteredCount READ filteredCount NOTIFY layerChanged)
 public:
-    enum Role {
-        DisplayRole = Qt::UserRole + 1
-    };
-    Q_ENUM(Role)
-
-    explicit AttributeTableModel(LayerModel *layers, QObject *parent = nullptr);
-
-    int rowCount(const QModelIndex &parent = {}) const override;
-    int columnCount(const QModelIndex &parent = {}) const override;
-    QVariant data(const QModelIndex &index, int role) const override;
-    QVariant headerData(int section, Qt::Orientation orientation,
-                        int role) const override;
-    QHash<int, QByteArray> roleNames() const override;
-
-    QString layerName() const { return m_layerName; }
-    QStringList columns() const { return m_columns; }
-    int totalCount() const { return m_rows.size(); }
-    int filteredCount() const { return m_visibleRows.size(); }
-    QString errorMessage() const { return m_errorMessage; }
-
-    Q_INVOKABLE bool loadLayer(int row);
-    Q_INVOKABLE void sortByColumn(int column, bool ascending);
-    Q_INVOKABLE void setFilter(int column, const QString &text);
-    Q_INVOKABLE void clear();
-
+  explicit AttributeTableModel(LayerModel *layers, QObject *parent = nullptr)
+      : QAbstractTableModel(parent), m_layers(layers) {}
+  QStringList columns() const { return m_columns; }
+  QString layerName() const { return m_name; }
+  int totalCount() const { return m_rows.size(); }
+  int filteredCount() const { return m_visible.size(); }
+  int rowCount(const QModelIndex &p = {}) const override {
+    return p.isValid() ? 0 : m_visible.size();
+  }
+  int columnCount(const QModelIndex &p = {}) const override {
+    return p.isValid() ? 0 : m_columns.size();
+  }
+  QVariant data(const QModelIndex &i,
+                int role = Qt::DisplayRole) const override;
+  Q_INVOKABLE bool loadLayer(int row);
+  Q_INVOKABLE void setFilter(int column, const QString &text);
+  Q_INVOKABLE void sortByColumn(int column, bool ascending);
 signals:
-    void layerChanged();
-    void countsChanged();
-    void errorMessageChanged();
+  void layerChanged();
 
 private:
-    void rebuildVisibleRows();
-    void sortVisibleRows();
-    void setErrorMessage(const QString &message);
-
-    LayerModel *m_layers = nullptr;
-    QString m_layerName;
-    QStringList m_columns;
-    QVector<QVector<QString>> m_rows;
-    QVector<int> m_visibleRows;
-    int m_filterColumn = -1;
-    QString m_filterText;
-    int m_sortColumn = -1;
-    bool m_sortAscending = true;
-    QString m_errorMessage;
+  LayerModel *m_layers;
+  QStringList m_columns;
+  QString m_name;
+  QVector<QVariantList> m_rows;
+  QVector<int> m_visible;
 };

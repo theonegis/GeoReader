@@ -150,8 +150,7 @@ else
     for candidate in \
         "$project_root"/build-* \
         "$project_root"/stage-* \
-        "$project_root"/dist-check* \
-        "$project_root"/dist-*check*; do
+        "$project_root"/dist-check*; do
         append_if_present "$candidate"
         if [[ -e "$candidate" && "$(basename "$candidate")" == build-* ]]; then
             build_targets+=("$candidate")
@@ -182,14 +181,11 @@ preserve_runnable()
         ditto "$source_build_dir/GeoReader.app" \
             "$output_directory/GeoReader.app"
         echo "Preserved runnable app: $output_directory/GeoReader.app"
-        return 0
     elif [[ -x "$source_build_dir/GeoReader" ]]; then
         mkdir -p "$output_directory"
         cp -p "$source_build_dir/GeoReader" "$output_directory/GeoReader"
         echo "Preserved runnable executable: $output_directory/GeoReader"
-        return 0
     fi
-    return 1
 }
 
 if [[ ${#targets[@]} -eq 0 ]]; then
@@ -210,9 +206,7 @@ fi
 
 if [[ "$remove_packages" == false && ${#build_targets[@]} -gt 0 ]]; then
     for build_target in "${build_targets[@]}"; do
-        if preserve_runnable "$build_target"; then
-            break
-        fi
+        preserve_runnable "$build_target"
     done
 fi
 
@@ -223,8 +217,7 @@ done
 if [[ "$remove_packages" == true ]]; then
     echo "Build files and generated installers were removed."
 else
-    find "$project_root" -type f \
-        \( -name 'dylibbundler-*.log' -o -name '.DS_Store' \) \
-        -delete
+    find "$project_root" -maxdepth 2 -type f \
+        -name 'dylibbundler-*.log' -delete
     echo "Temporary files were removed; runnable outputs and installers were preserved."
 fi

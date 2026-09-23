@@ -52,9 +52,11 @@ QVariant LayerModel::data(const QModelIndex &index, int role) const
     case BlueBandRole: return layer.blueBand;
     case GrayBandRole: return layer.grayBand;
     case RasterModeRole: return layer.rasterMode;
-    case ColorRampRole: return layer.colorRamp;
     case ColorRampReversedRole: return layer.colorRampReversed;
     case StretchModeRole: return layer.stretchMode;
+    case ScientificRole: return layer.scientific;
+    case GeographicRole: return layer.geographic;
+    case ColorRampRole: return layer.colorRamp;
     case BandMinimumsRole: return toVariantList(layer.bandMinimums);
     case BandMaximumsRole: return toVariantList(layer.bandMaximums);
     case NoDataEnabledRole: return layer.noDataEnabled;
@@ -83,8 +85,6 @@ bool LayerModel::setData(const QModelIndex &index, const QVariant &value, int ro
     case GrayBandRole: layer.grayBand = value.toInt(); break;
     case RasterModeRole: layer.rasterMode = value.toString(); break;
     case ColorRampRole: layer.colorRamp = value.toString(); break;
-    case ColorRampReversedRole: layer.colorRampReversed = value.toBool(); break;
-    case StretchModeRole: layer.stretchMode = value.toString(); break;
     case NoDataEnabledRole: layer.noDataEnabled = value.toBool(); break;
     case NoDataValueRole: layer.noDataValue = value.toString(); break;
     default: return false;
@@ -123,6 +123,8 @@ QHash<int, QByteArray> LayerModel::roleNames() const
         {ColorRampRole, "colorRamp"},
         {ColorRampReversedRole, "colorRampReversed"},
         {StretchModeRole, "stretchMode"},
+        {ScientificRole, "scientific"},
+        {GeographicRole, "geographic"},
         {BandMinimumsRole, "bandMinimums"},
         {BandMaximumsRole, "bandMaximums"},
         {NoDataEnabledRole, "noDataEnabled"},
@@ -195,9 +197,7 @@ void LayerModel::setVectorStyle(int row, const QColor &lineColor,
 
 void LayerModel::setRasterStyle(int row, const QString &mode, int redBand,
                                 int greenBand, int blueBand, int grayBand,
-                                const QString &colorRamp,
-                                bool colorRampReversed,
-                                const QString &stretchMode)
+                                const QString &colorRamp, bool reversed, const QString &stretch)
 {
     if (row < 0 || row >= m_layers.size())
         return;
@@ -211,19 +211,11 @@ void LayerModel::setRasterStyle(int row, const QString &mode, int redBand,
     layer.blueBand = clampBand(blueBand);
     layer.grayBand = clampBand(grayBand);
     layer.colorRamp = colorRamp;
-    layer.colorRampReversed = colorRampReversed;
-    const QStringList supportedStretchModes {
-        QStringLiteral("minmax"),
-        QStringLiteral("percent_clip"),
-        QStringLiteral("standard_deviation"),
-        QStringLiteral("histogram_equalization")
-    };
-    layer.stretchMode = supportedStretchModes.contains(stretchMode)
-        ? stretchMode : QStringLiteral("minmax");
+    layer.colorRampReversed = reversed;
+    layer.stretchMode = stretch;
     emit dataChanged(index(row), index(row),
                      {RasterModeRole, RedBandRole, GreenBandRole, BlueBandRole,
-                      GrayBandRole, ColorRampRole, ColorRampReversedRole,
-                      StretchModeRole});
+                      GrayBandRole, ColorRampRole, ColorRampReversedRole, StretchModeRole});
     emit renderingChanged();
 }
 
@@ -242,28 +234,6 @@ void LayerModel::setBandRange(int row, int band, double minimum,
 
     layer.bandMinimums[indexInLayer] = minimum;
     layer.bandMaximums[indexInLayer] = maximum;
-    emit dataChanged(index(row), index(row),
-                     {BandMinimumsRole, BandMaximumsRole});
-    emit renderingChanged();
-}
-
-void LayerModel::setBandRanges(const QString &layerId,
-                               const QVector<double> &minimums,
-                               const QVector<double> &maximums)
-{
-    if (minimums.size() != maximums.size())
-        return;
-    const auto iterator =
-        std::find_if(m_layers.begin(), m_layers.end(),
-                     [&layerId](const LayerSnapshot &layer) {
-                         return layer.id == layerId;
-                     });
-    if (iterator == m_layers.end()
-        || iterator->bandMinimums.size() != minimums.size())
-        return;
-    const int row = static_cast<int>(std::distance(m_layers.begin(), iterator));
-    iterator->bandMinimums = minimums;
-    iterator->bandMaximums = maximums;
     emit dataChanged(index(row), index(row),
                      {BandMinimumsRole, BandMaximumsRole});
     emit renderingChanged();
@@ -293,8 +263,6 @@ void LayerModel::moveLayer(int from, int to)
 {
     if (from < 0 || from >= m_layers.size() || to < 0 || to >= m_layers.size() || from == to)
         return;
-    // beginMoveRows 的目标位置使用“插入前”坐标；向下移动时需跨过源行。
-    // QML、选择索引和渲染快照因此会收到标准模型移动通知，而非整表重置。
     const int destination = to > from ? to + 1 : to;
     beginMoveRows({}, from, from, {}, destination);
     m_layers.move(from, to);
@@ -310,5 +278,16 @@ void LayerModel::removeLayer(int row)
     m_layers.removeAt(row);
     endRemoveRows();
     emit countChanged();
+    emit renderingChanged();
+}
+
+int LayerModel::rowForId(const QString &id) const {
+    for(int i=0;i<m_layers.size();++i) if(m_layers[i].id==id) return i;
+    return -1;
+}
+void LayerModel::setSource(int row, const QString &path) {
+    if(row<0 || row>=m_layers.size()) return;
+    m_layers[row].path=path;
+    emit dataChanged(index(row),index(row),{PathRole});
     emit renderingChanged();
 }

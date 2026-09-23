@@ -9,7 +9,6 @@ build_type="Release"
 build_dir="$project_root/build"
 clean_first=false
 create_package=false
-package_format="auto"
 parallel_jobs=""
 cmake_extra_args=()
 has_cmake_extra_args=false
@@ -24,15 +23,13 @@ Options:
   --build-dir <path>  Build directory inside the project (default: build)
   --jobs <count>      Maximum number of parallel build jobs
   --clean-first       Remove the selected build directory before configuring
-  --package           Create a platform-appropriate package
-  --package-format F  Package format: auto, all, dmg, deb, rpm, or tgz
+  --package           Create a DMG on macOS or DEB and RPM packages on Linux
   -h, --help          Show this help
 
 Examples:
   ./scripts/build.sh
   ./scripts/build.sh --type Debug --jobs 8
   ./scripts/build.sh --clean-first --package
-  ./scripts/build.sh --package --package-format rpm
   ./scripts/build.sh -- -DMAPNIK_INPUT_PLUGIN_DIR=/usr/lib/mapnik/input
 EOF
 }
@@ -113,20 +110,6 @@ while [[ $# -gt 0 ]]; do
             create_package=true
             shift
             ;;
-        --package-format)
-            require_value "$1" "${2:-}"
-            case "$2" in
-                auto|all|dmg|deb|rpm|tgz)
-                    package_format="$2"
-                    ;;
-                *)
-                    echo "Unsupported package format: $2" >&2
-                    exit 2
-                    ;;
-            esac
-            create_package=true
-            shift 2
-            ;;
         -h|--help)
             usage
             exit 0
@@ -179,50 +162,9 @@ cmake_arguments=(
 if [[ "$(uname -s)" == "Darwin" ]] \
    && [[ -z "${CMAKE_PREFIX_PATH:-}" ]] \
    && command -v brew >/dev/null 2>&1; then
-    # Homebrew 的 Qt 与 ICU 通常是 keg-only。只加入 Qt 会导致 Mapnik 的
-    # mapnikConfig.cmake 在全新机器或 CI runner 上找不到 ICU 动态库。
-    # 这里动态读取公式前缀，同时兼容 Intel (/usr/local) 与 Apple Silicon
-    # (/opt/homebrew)，避免在脚本中硬编码处理器相关路径。
-    georeader_brew_prefixes=()
-    georeader_qt_prefix="$(brew --prefix qt 2>/dev/null || true)"
-    georeader_icu_prefix=""
-    for georeader_icu_formula in icu4c@78 icu4c@77 icu4c@76 icu4c; do
-        georeader_icu_prefix="$(
-            brew --prefix "$georeader_icu_formula" 2>/dev/null || true
-        )"
-        [[ -n "$georeader_icu_prefix" ]] && break
-    done
-
-    for georeader_formula in mapnik gdal; do
-        georeader_formula_prefix="$(
-            brew --prefix "$georeader_formula" 2>/dev/null || true
-        )"
-        if [[ -n "$georeader_formula_prefix" ]]; then
-            georeader_brew_prefixes+=("$georeader_formula_prefix")
-        fi
-    done
-    if [[ -n "$georeader_qt_prefix" ]]; then
-        georeader_brew_prefixes=(
-            "$georeader_qt_prefix"
-            "${georeader_brew_prefixes[@]}"
-        )
-    fi
-    if [[ -n "$georeader_icu_prefix" ]]; then
-        georeader_brew_prefixes=(
-            "$georeader_icu_prefix"
-            "${georeader_brew_prefixes[@]}"
-        )
-        cmake_arguments+=("-DICU_ROOT=$georeader_icu_prefix")
-    fi
-
-    if (( ${#georeader_brew_prefixes[@]} > 0 )); then
-        georeader_cmake_prefix_path="$(
-            IFS=';'
-            echo "${georeader_brew_prefixes[*]}"
-        )"
-        cmake_arguments+=(
-            "-DCMAKE_PREFIX_PATH=$georeader_cmake_prefix_path"
-        )
+    qt_prefix="$(brew --prefix qt 2>/dev/null || true)"
+    if [[ -n "$qt_prefix" ]]; then
+        cmake_arguments+=("-DCMAKE_PREFIX_PATH=$qt_prefix")
     fi
 fi
 
@@ -266,12 +208,6 @@ fi
 
 case "$(uname -s)" in
     Darwin)
-        if [[ "$package_format" != "auto" \
-              && "$package_format" != "all" \
-              && "$package_format" != "dmg" ]]; then
-            echo "macOS supports package formats: auto, all, dmg." >&2
-            exit 2
-        fi
         if ! command -v dylibbundler >/dev/null 2>&1; then
             echo "Packaging requires dylibbundler: brew install dylibbundler" >&2
             exit 1
@@ -285,72 +221,11 @@ case "$(uname -s)" in
         echo "Package completed: $project_root/dist"
         ;;
     Linux)
-        linux_distribution="unknown"
-        if [[ -r /etc/os-release ]]; then
-            linux_distribution="$(
-                sed -n 's/^ID=//p' /etc/os-release \
-                    | head -n 1 \
-                    | tr -d '"'
-            )"
-        fi
-
-        generators=()
-        case "$package_format" in
-            auto)
-                case "$linux_distribution" in
-                    ubuntu|debian|linuxmint|pop)
-                        generators=(DEB)
-                        ;;
-                    fedora|rhel|centos|rocky|almalinux)
-                        generators=(RPM)
-                        ;;
-                    arch|cachyos|manjaro|endeavouros)
-                        generators=(TGZ)
-                        ;;
-                    *)
-                        if command -v dpkg-deb >/dev/null 2>&1; then
-                            generators=(DEB)
-                        elif command -v rpmbuild >/dev/null 2>&1; then
-                            generators=(RPM)
-                        else
-                            generators=(TGZ)
-                        fi
-                        ;;
-                esac
-                ;;
-            all)
-                generators=(DEB RPM TGZ)
-                ;;
-            deb)
-                generators=(DEB)
-                ;;
-            rpm)
-                generators=(RPM)
-                ;;
-            tgz)
-                generators=(TGZ)
-                ;;
-            dmg)
-                echo "DMG packages can only be created on macOS." >&2
-                exit 2
-                ;;
-        esac
-
-        for generator in "${generators[@]}"; do
-            if [[ "$generator" == "DEB" ]] \
-               && ! command -v dpkg-deb >/dev/null 2>&1; then
-                echo "DEB packaging requires dpkg-deb." >&2
-                exit 1
-            fi
-            if [[ "$generator" == "RPM" ]] \
-               && ! command -v rpmbuild >/dev/null 2>&1; then
-                echo "RPM packaging requires rpmbuild." >&2
-                exit 1
-            fi
+        for generator in DEB RPM; do
             cpack --config "$build_dir/CPackConfig.cmake" \
                 -G "$generator" -B "$project_root/dist"
         done
-        echo "Linux packages completed (${generators[*]}): $project_root/dist"
+        echo "Packages completed: $project_root/dist"
         ;;
     *)
         echo "--package is supported by this script on macOS and Linux." >&2

@@ -25,9 +25,11 @@ struct LayerSnapshot
     int blueBand = 3;
     int grayBand = 1;
     QString rasterMode = QStringLiteral("rgb");
-    QString colorRamp = QStringLiteral("Viridis");
+    bool geographic = true;
+    bool scientific = false;
     bool colorRampReversed = false;
     QString stretchMode = QStringLiteral("minmax");
+    QString colorRamp = QStringLiteral("Viridis");
     QVector<double> bandMinimums;
     QVector<double> bandMaximums;
     bool noDataEnabled = true;
@@ -63,13 +65,11 @@ public:
         GrayBandRole,
         RasterModeRole,
         ColorRampRole,
-        ColorRampReversedRole,
-        StretchModeRole,
         BandMinimumsRole,
         BandMaximumsRole,
         NoDataEnabledRole,
         NoDataValueRole,
-        CrsRole
+        CrsRole, ColorRampReversedRole, StretchModeRole, ScientificRole, GeographicRole
     };
     Q_ENUM(Role)
 
@@ -93,16 +93,15 @@ public:
                                     const QColor &fillColor, double lineWidth);
     Q_INVOKABLE void setRasterStyle(int row, const QString &mode, int redBand,
                                     int greenBand, int blueBand, int grayBand,
-                                    const QString &colorRamp,
-                                    bool colorRampReversed,
-                                    const QString &stretchMode);
+                                    const QString &colorRamp, bool reversed = false,
+                                    const QString &stretch = QStringLiteral("minmax"));
     Q_INVOKABLE void setBandRange(int row, int band, double minimum,
                                   double maximum);
-    void setBandRanges(const QString &layerId, const QVector<double> &minimums,
-                       const QVector<double> &maximums);
     Q_INVOKABLE void setRasterNoData(int row, bool enabled,
                                      const QString &value);
     Q_INVOKABLE void moveLayer(int from, int to);
+    int rowForId(const QString &id) const;
+    void setSource(int row, const QString &path);
     Q_INVOKABLE void removeLayer(int row);
 
 signals:

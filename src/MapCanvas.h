@@ -11,7 +11,6 @@
 #include <QQuickPaintedItem>
 #include <QRectF>
 #include <QSet>
-#include <QString>
 #include <QTimer>
 
 class QNetworkReply;
@@ -50,11 +49,10 @@ class MapCanvas : public QQuickPaintedItem
     Q_PROPERTY(double zoomLevel READ zoomLevel NOTIFY viewportChanged)
     Q_PROPERTY(double mouseLongitude READ mouseLongitude NOTIFY mouseCoordinateChanged)
     Q_PROPERTY(double mouseLatitude READ mouseLatitude NOTIFY mouseCoordinateChanged)
+    Q_PROPERTY(QString inspectionMode READ inspectionMode WRITE setInspectionMode NOTIFY inspectionModeChanged)
     Q_PROPERTY(bool rendering READ rendering NOTIFY renderingChanged)
     Q_PROPERTY(bool rectangleZoomActive READ rectangleZoomActive
                WRITE setRectangleZoomActive NOTIFY rectangleZoomActiveChanged)
-    Q_PROPERTY(QString inspectionMode READ inspectionMode
-               WRITE setInspectionMode NOTIFY inspectionModeChanged)
 
 public:
     explicit MapCanvas(QQuickItem *parent = nullptr);
@@ -69,27 +67,27 @@ public:
     double zoomLevel() const { return m_zoomLevel; }
     double mouseLongitude() const { return m_mouseLongitude; }
     double mouseLatitude() const { return m_mouseLatitude; }
+    QString inspectionMode() const { return m_inspectionMode; }
+    void setInspectionMode(const QString &mode);
     bool rendering() const { return m_rendering; }
     bool rectangleZoomActive() const { return m_rectangleZoomActive; }
-    QString inspectionMode() const { return m_inspectionMode; }
 
     Q_INVOKABLE void zoomBy(double delta);
     Q_INVOKABLE void panBy(double horizontalPixels, double verticalPixels);
     Q_INVOKABLE void fitBounds(double minLon, double minLat,
                                double maxLon, double maxLat);
     Q_INVOKABLE void setRectangleZoomActive(bool active);
-    Q_INVOKABLE void setInspectionMode(const QString &mode);
     Q_INVOKABLE void setSelectedFeatureWkt(const QString &wkt);
     Q_INVOKABLE void clearSelectedFeature();
     Q_INVOKABLE void refresh();
 
 signals:
+    void inspectionModeChanged();
     void layerModelChanged();
     void viewportChanged();
     void mouseCoordinateChanged();
     void renderingChanged();
     void rectangleZoomActiveChanged();
-    void inspectionModeChanged();
     void mapClicked(double longitude, double latitude);
     void renderError(const QString &message);
 
@@ -105,13 +103,13 @@ private:
     static QPointF lonLatToWorld(double longitude, double latitude, double zoom);
     static QPointF worldToLonLat(double x, double y, double zoom);
     static QPointF lonLatToMercator(double longitude, double latitude);
+    static RenderResult renderMapnikLayers(QVector<LayerSnapshot> layers, MapViewport viewport, quint64 generation);
     static RenderResult renderLayers(QVector<LayerSnapshot> layers,
                                      MapViewport viewport, quint64 generation);
 
     QPointF screenToLonLat(const QPointF &screenPoint) const;
     MapViewport currentViewport() const;
     void updateMouseCoordinate(const QPointF &position);
-    void updateCursor();
     void scheduleOverlayRender();
     void beginOverlayRender();
     void drawBaseMap(QPainter *painter);
@@ -120,6 +118,7 @@ private:
     void tileFinished(QNetworkReply *reply);
     void setRendering(bool rendering);
 
+    QString m_inspectionMode = QStringLiteral("pan");
     LayerModel *m_layerModel = nullptr;
     QNetworkAccessManager m_network;
     QHash<QString, QImage> m_tiles;
@@ -143,5 +142,4 @@ private:
     bool m_selectingRectangle = false;
     bool m_rectangleZoomActive = false;
     bool m_rendering = false;
-    QString m_inspectionMode = QStringLiteral("pan");
 };

@@ -79,3 +79,7 @@ __pycache__
 ._*
 Thumbs.db
 Desktop.ini
+
+# Local scientific-data build dependencies and test evidence
+/.test-deps/
+/tests/output/

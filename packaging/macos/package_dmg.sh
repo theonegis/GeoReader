@@ -51,6 +51,7 @@ fi
 qt_plugin_root="$(qtpaths --plugin-dir)"
 qt_runtime_plugins=(
     "platforms/libqcocoa.dylib"
+    "platforms/libqoffscreen.dylib"
     "tls/libqsecuretransportbackend.dylib"
     "networkinformation/libqapplenetworkinformation.dylib"
     "imageformats/libqgif.dylib"
@@ -105,14 +106,27 @@ for relative_plugin in "${qt_runtime_plugins[@]}"; do
     bundle_arguments+=(-x "$plugin")
 done
 
+# Scientific format drivers must be processed as well: HDF4 brings its own
+# libmfhdf/libhdf, which are not direct dependencies of libgdal.
+while IFS= read -r plugin; do
+    bundle_arguments+=(-x "$plugin")
+done < <(find "$app_path/Contents/PlugIns/gdal" -type f -name '*.dylib' -print | sort)
+
+
 for formula in mapnik gdal icu4c@78 icu4c; do
     if formula_prefix="$(brew --prefix "$formula" 2>/dev/null)"; then
         bundle_arguments+=(-s "$formula_prefix/lib")
     fi
 done
 
+# Locally built HDF4 libraries use @rpath install names. Search their build
+# prefix explicitly; this directory is only needed on the packaging machine.
+for hdf4_prefix in "${HDF4_ROOT:-}" "$project_root/.test-deps/hdf4" "$project_root/.test-deps/hdf4-driver"; do
+    [[ -n "$hdf4_prefix" && -d "$hdf4_prefix/lib" ]] || continue
+    bundle_arguments+=(-s "$hdf4_prefix/lib")
+done
 bundle_log="$output_dir/dylibbundler-${architecture}.log"
-if ! dylibbundler "${bundle_arguments[@]}" >"$bundle_log" 2>&1; then
+if ! dylibbundler "${bundle_arguments[@]}" <<< quit >"$bundle_log" 2>&1; then
     tail -n 200 "$bundle_log" >&2
     exit 1
 fi
@@ -126,6 +140,15 @@ for deployed_qt_directory in \
     source_directory="$source_app_path/$deployed_qt_directory"
     [[ -d "$source_directory" ]] || continue
     ditto "$source_directory" "$app_path/$deployed_qt_directory"
+done
+
+# Runtime data is resolved relative to the app. Core PROJ definitions are
+# bundled; optional, multi-gigabyte regional datum grids are not required by
+# the WGS84/Web Mercator viewer and can be supplied by a future grid manager.
+mkdir -p "$app_path/Contents/Resources/gdal" "$app_path/Contents/Resources/proj"
+ditto "$(brew --prefix gdal)/share/gdal" "$app_path/Contents/Resources/gdal"
+for proj_file in proj.db proj.ini; do
+    cp "$(brew --prefix proj)/share/proj/$proj_file" "$app_path/Contents/Resources/proj/"
 done
 
 # macdeployqt may refer to a compatibility-name dylib while dylibbundler
@@ -167,15 +190,9 @@ install_name_tool -add_rpath "@executable_path/../Frameworks" \
 # canonical bundled filenames used by the plug-ins.
 while IFS= read -r dependency; do
     dependency_name="$(basename "$dependency")"
-    canonical_name="$dependency_name"
-    for candidate in \
-        "$frameworks_dir/${dependency_name%.dylib}".*.dylib; do
-        [[ -f "$candidate" ]] || continue
-        candidate_name="$(basename "$candidate")"
-        if [[ ${#candidate_name} -gt ${#canonical_name} ]]; then
-            canonical_name="$candidate_name"
-        fi
-    done
+    compatibility_path="$frameworks_dir/$dependency_name"
+    [[ -L "$compatibility_path" ]] || continue
+    canonical_name="$(basename "$(realpath "$compatibility_path")")"
     [[ "$canonical_name" != "$dependency_name" ]] || continue
     install_name_tool -change "$dependency" \
         "@rpath/$canonical_name" "$executable"
@@ -198,6 +215,13 @@ while IFS= read -r -d '' binary; do
     file "$binary" | grep -q "Mach-O" || continue
 
     modified=false
+    while IFS= read -r rpath; do
+        case "$rpath" in
+            /opt/*|/usr/local/*|/Users/*)
+                install_name_tool -delete_rpath "$rpath" "$binary"
+                modified=true ;;
+        esac
+    done < <(otool -l "$binary" | awk '/LC_RPATH/ { getline; getline; print $2 }')
     while duplicate_rpath="$(
         otool -l "$binary" \
             | awk '/LC_RPATH/ { getline; getline; print $2 }' \
@@ -224,6 +248,9 @@ while IFS= read -r plugin; do
 done < <(find "$app_path/Contents/PlugIns/mapnik/input" \
     -type f -name "*.input" -print | sort)
 
+# Normalize Qt framework references left by split Homebrew Qt deployments.
+python3 "$project_root/scripts/relocate_macos_bundle.py" "$app_path"
+
 # CI artifacts are ad-hoc signed; a Developer ID can replace this later.
 # --deep refreshes the signatures of the QML plug-ins restored above.
 codesign --force --deep --sign - "$app_path"
@@ -241,14 +268,19 @@ for required_runtime_file in "${required_runtime_files[@]}"; do
     fi
 done
 
+# Refuse to deliver a bundle that still depends on the build machine.
+python3 "$project_root/scripts/audit_macos_bundle.py" "$app_path"
+QT_QPA_PLATFORM=offscreen "$executable" --runtime-check \
+    "$project_root/tests/data/netcdf4.nc" "$project_root/tests/data/scientific.h5" \
+    "$project_root/tests/data/scientific.hdf" > "$output_dir/runtime-check.json"
+# Preserve the complete runnable app as well as the installer image.
+ditto "$app_path" "$output_dir/GeoReader.app"
 dmg_path="$output_dir/GeoReader-macOS-${architecture}.dmg"
-local_dmg_path="$work_dir/GeoReader-macOS-${architecture}.dmg"
 hdiutil create \
     -volname "GeoReader" \
     -srcfolder "$app_path" \
     -ov \
     -format UDZO \
-    "$local_dmg_path"
-ditto "$local_dmg_path" "$dmg_path"
+    "$dmg_path"
 
 echo "Created $dmg_path"

@@ -1,0 +1,15 @@
+cmake_minimum_required(VERSION 3.25)
+project(GeoReaderHDF4Driver LANGUAGES C CXX)
+find_package(GDAL CONFIG REQUIRED)
+set(CMAKE_CXX_STANDARD 17)
+set(GDAL_SOURCE_DIR "" CACHE PATH "Source tree matching the installed GDAL version")
+set(HDF4_ROOT "" CACHE PATH "HDF4 library installation")
+set(DRIVER "${GDAL_SOURCE_DIR}/frmts/hdf4")
+set(HDF "${HDF4_ROOT}")
+add_library(gdal_HDF4 MODULE
+    ${DRIVER}/hdf4dataset.cpp ${DRIVER}/hdf4imagedataset.cpp ${DRIVER}/hdf4multidim.cpp ${DRIVER}/hdf4drivercore.cpp
+    ${DRIVER}/hdf-eos/EHapi.c ${DRIVER}/hdf-eos/GDapi.c ${DRIVER}/hdf-eos/SWapi.c ${DRIVER}/hdf-eos/helper.c ${DRIVER}/hdf-eos/gctp_wrap.c)
+set_target_properties(gdal_HDF4 PROPERTIES PREFIX "" SUFFIX ".dylib")
+target_compile_definitions(gdal_HDF4 PRIVATE HDF4_PLUGIN HDF4_HAS_MAXOPENFILES)
+target_include_directories(gdal_HDF4 PRIVATE ${DRIVER} ${DRIVER}/hdf-eos ${HDF}/include ${GDAL_SOURCE_DIR}/gcore ${GDAL_SOURCE_DIR}/frmts/pds)
+target_link_libraries(gdal_HDF4 PRIVATE GDAL::GDAL ${HDF}/lib/libmfhdf.dylib ${HDF}/lib/libhdf.dylib)

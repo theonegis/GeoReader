@@ -382,7 +382,7 @@ MapCanvas::MapCanvas(QQuickItem *parent)
     setAntialiasing(false);
     setMipmap(false);
     setOpaquePainting(true);
-    updateCursor();
+    setCursor(m_inspectionMode=="pan"?Qt::OpenHandCursor:Qt::CrossCursor);
 
     auto *diskCache = new QNetworkDiskCache(&m_network);
     diskCache->setCacheDirectory(
@@ -676,24 +676,9 @@ void MapCanvas::setRectangleZoomActive(bool active)
     m_selectingRectangle = false;
     m_dragging = false;
     m_selectionRectangle = {};
-    updateCursor();
+    setCursor(active ? Qt::CrossCursor : Qt::OpenHandCursor);
     emit rectangleZoomActiveChanged();
     update();
-}
-
-void MapCanvas::setInspectionMode(const QString &mode)
-{
-    const auto normalized =
-        mode == QStringLiteral("vector") || mode == QStringLiteral("raster")
-        ? mode
-        : QStringLiteral("pan");
-    if (m_inspectionMode == normalized)
-        return;
-
-    m_inspectionMode = normalized;
-    m_dragging = false;
-    updateCursor();
-    emit inspectionModeChanged();
 }
 
 void MapCanvas::setSelectedFeatureWkt(const QString &wkt)
@@ -827,12 +812,6 @@ void MapCanvas::mousePressEvent(QMouseEvent *event)
         return;
     }
 
-    if (m_inspectionMode != QStringLiteral("pan")) {
-        updateMouseCoordinate(event->position());
-        event->accept();
-        return;
-    }
-
     setCursor(Qt::ClosedHandCursor);
     event->accept();
 }
@@ -844,12 +823,6 @@ void MapCanvas::mouseMoveEvent(QMouseEvent *event)
             QRectF(m_pressPosition, event->position()).normalized();
         updateMouseCoordinate(event->position());
         update();
-        event->accept();
-        return;
-    }
-
-    if (m_inspectionMode != QStringLiteral("pan")) {
-        updateMouseCoordinate(event->position());
         event->accept();
         return;
     }
@@ -885,7 +858,7 @@ void MapCanvas::mouseReleaseEvent(QMouseEvent *event)
         return;
     }
 
-    updateCursor();
+    setCursor(m_inspectionMode=="pan"?Qt::OpenHandCursor:Qt::CrossCursor);
     if (!m_dragging) {
         const QPointF coordinate = screenToLonLat(event->position());
         emit mapClicked(coordinate.x(), coordinate.y());
@@ -915,19 +888,6 @@ void MapCanvas::updateMouseCoordinate(const QPointF &position)
     emit mouseCoordinateChanged();
 }
 
-void MapCanvas::updateCursor()
-{
-    if (m_rectangleZoomActive || m_inspectionMode == QStringLiteral("raster")) {
-        setCursor(Qt::CrossCursor);
-        return;
-    }
-    if (m_inspectionMode == QStringLiteral("vector")) {
-        setCursor(Qt::ArrowCursor);
-        return;
-    }
-    setCursor(Qt::OpenHandCursor);
-}
-
 void MapCanvas::scheduleOverlayRender()
 {
     ++m_generation;
@@ -950,7 +910,7 @@ void MapCanvas::beginOverlayRender()
         }));
 }
 
-RenderResult MapCanvas::renderLayers(QVector<LayerSnapshot> layers,
+RenderResult MapCanvas::renderMapnikLayers(QVector<LayerSnapshot> layers,
                                      MapViewport viewport, quint64 generation)
 {
     RenderResult result;
@@ -960,18 +920,15 @@ RenderResult MapCanvas::renderLayers(QVector<LayerSnapshot> layers,
         return result;
 
     try {
-        result.image = QImage(viewport.width, viewport.height,
-                              QImage::Format_ARGB32_Premultiplied);
-        result.image.fill(Qt::transparent);
-        // 图层面板第 0 行代表最上层，因此必须从模型末尾向前绘制。
-        // 每个矢量图层在自身位置独立离屏渲染，才能保留矢量/栅格交错顺序。
-        for (auto iterator = layers.crbegin(); iterator != layers.crend();
-             ++iterator) {
-            const LayerSnapshot &layer = *iterator;
+        QString styles;
+        QString mapLayers;
+        std::vector<TemporaryVrt> temporaryVrts;
+        int styleIndex = 0;
+        for (const auto &layer : layers) {
             if (!layer.visible)
                 continue;
+            const QString styleName = QStringLiteral("style_%1").arg(styleIndex++);
             if (layer.type == QStringLiteral("vector")) {
-                const QString styleName = QStringLiteral("layer_style");
                 const QString opacity =
                     QString::number(layer.opacity, 'f', 3);
                 QString symbolizers;
@@ -995,54 +952,57 @@ RenderResult MapCanvas::renderLayers(QVector<LayerSnapshot> layers,
                              QString::number(layer.lineWidth, 'f', 2),
                              opacity);
                 }
-                const QString style = QStringLiteral(
+                styles += QStringLiteral(
                     "<Style name=\"%1\"><Rule>%2</Rule></Style>")
                     .arg(styleName, symbolizers);
-                const QString mapLayer = QStringLiteral(
+                mapLayers += QStringLiteral(
                     "<Layer name=\"%1\" srs=\"%2\">"
                     "<StyleName>%3</StyleName><Datasource>%4</Datasource></Layer>")
                     .arg(xmlEscaped(layer.name), xmlEscaped(layer.srs), styleName,
                          vectorDatasourceXml(layer));
-                const QString xml = QStringLiteral(
-                    "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-                    "<Map srs=\"+proj=merc +a=6378137 +b=6378137 "
-                    "+lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m "
-                    "+nadgrids=@null +wktext +no_defs\" "
-                    "background-color=\"transparent\">%1%2</Map>")
-                                        .arg(style, mapLayer);
-                mapnik::Map map(viewport.width, viewport.height);
-                mapnik::load_map_string(map, xml.toStdString(), true);
-                map.zoom_to_box(mapnik::box2d<double>(
-                    viewport.minMercatorX, viewport.minMercatorY,
-                    viewport.maxMercatorX, viewport.maxMercatorY));
-                mapnik::image_rgba8 image(viewport.width, viewport.height);
-                mapnik::agg_renderer<mapnik::image_rgba8> renderer(map, image);
-                renderer.apply();
-                const std::string png =
-                    mapnik::save_to_string(image, "png");
-                const QImage vectorImage = QImage::fromData(
-                    reinterpret_cast<const uchar *>(png.data()),
-                    static_cast<qsizetype>(png.size()), "PNG");
-                QPainter painter(&result.image);
-                painter.setCompositionMode(
-                    QPainter::CompositionMode_SourceOver);
-                painter.drawImage(QPoint(0, 0), vectorImage);
             } else if (layer.type == QStringLiteral("raster")) {
-                const auto raster = renderRasterLayer(
-                    layer,
-                    {viewport.width, viewport.height,
-                     viewport.minMercatorX, viewport.minMercatorY,
-                     viewport.maxMercatorX, viewport.maxMercatorY});
-                if (!raster.error.isEmpty() && result.error.isEmpty())
-                    result.error = raster.error;
-                if (!raster.image.isNull()) {
-                    QPainter painter(&result.image);
-                    painter.setCompositionMode(
-                        QPainter::CompositionMode_SourceOver);
-                    painter.drawImage(QPoint(0, 0), raster.image);
-                }
+                TemporaryVrt vrt = createDisplayVrt(layer, generation);
+                const QString dataPath = vrt ? vrt.path() : layer.path;
+                if (vrt)
+                    temporaryVrts.push_back(std::move(vrt));
+                QString rasterSymbolizer;
+                rasterSymbolizer = QStringLiteral(
+                    "<RasterSymbolizer opacity=\"%1\" scaling=\"bilinear\"/>")
+                    .arg(QString::number(layer.opacity, 'f', 3));
+                styles += QStringLiteral("<Style name=\"%1\"><Rule>%2</Rule></Style>")
+                              .arg(styleName, rasterSymbolizer);
+                mapLayers += QStringLiteral(
+                    "<Layer name=\"%1\" srs=\"%2\">"
+                    "<StyleName>%3</StyleName><Datasource>"
+                    "<Parameter name=\"type\">gdal</Parameter>"
+                    "<Parameter name=\"file\">%4</Parameter>"
+                    "</Datasource></Layer>")
+                    .arg(xmlEscaped(layer.name), xmlEscaped(layer.srs), styleName,
+                         xmlEscaped(dataPath));
             }
         }
+
+        if (styleIndex == 0)
+            return result;
+
+        const QString xml = QStringLiteral(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
+            "<Map srs=\"+proj=merc +a=6378137 +b=6378137 +lat_ts=0 "
+            "+lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null "
+            "+wktext +no_defs\" background-color=\"transparent\">"
+            "%1%2</Map>").arg(styles, mapLayers);
+        mapnik::Map map(viewport.width, viewport.height);
+        mapnik::load_map_string(map, xml.toStdString(), true);
+        map.zoom_to_box(mapnik::box2d<double>(
+            viewport.minMercatorX, viewport.minMercatorY,
+            viewport.maxMercatorX, viewport.maxMercatorY));
+        mapnik::image_rgba8 image(viewport.width, viewport.height);
+        mapnik::agg_renderer<mapnik::image_rgba8> renderer(map, image);
+        renderer.apply();
+        const std::string png = mapnik::save_to_string(image, "png");
+        result.image = QImage::fromData(
+            reinterpret_cast<const uchar *>(png.data()),
+            static_cast<qsizetype>(png.size()), "PNG");
     } catch (const std::exception &exception) {
         result.error = QString::fromUtf8(exception.what());
     }
@@ -1055,4 +1015,22 @@ void MapCanvas::setRendering(bool rendering)
         return;
     m_rendering = rendering;
     emit renderingChanged();
+}
+
+void MapCanvas::setInspectionMode(const QString &mode) {
+    if(m_inspectionMode==mode) return;
+    m_inspectionMode=mode;
+    setCursor(mode=="pan"?Qt::OpenHandCursor:Qt::CrossCursor);
+    emit inspectionModeChanged();
+}
+RenderResult MapCanvas::renderLayers(QVector<LayerSnapshot> layers, MapViewport viewport, quint64 generation) {
+    RenderResult result;result.generation=generation;result.viewport=viewport;
+    result.image=QImage(viewport.width,viewport.height,QImage::Format_ARGB32_Premultiplied);result.image.fill(Qt::transparent);
+    QPainter painter(&result.image);
+    for(auto it=layers.crbegin();it!=layers.crend();++it) {
+        if(!it->visible) continue;
+        if(it->type=="raster") painter.drawImage(0,0,RasterRenderer::render(*it,viewport,result.error));
+        else {auto vector=renderMapnikLayers({*it},viewport,generation);painter.drawImage(0,0,vector.image);if(!vector.error.isEmpty())result.error=vector.error;}
+    }
+    return result;
 }

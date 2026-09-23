@@ -1,5 +1,8 @@
 #include "AppController.h"
 #include "MapCanvas.h"
+#ifdef GEOREADER_UI_TESTS
+#include "ScientificUiTests.h"
+#endif
 
 #include <QApplication>
 #include <QCommandLineOption>
@@ -16,6 +19,12 @@
 #include <QSettings>
 #include <QTimer>
 #include <QTranslator>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include "ScientificData.h"
+#ifdef Q_OS_MACOS
+#include <dlfcn.h>
+#endif
 
 #include <cpl_conv.h>
 #include <gdal.h>
@@ -34,6 +43,13 @@ namespace {
 
 void configureGdalData()
 {
+    { // A shipped app always uses its own scientific-format plugins.
+        const QDir executable(QCoreApplication::applicationDirPath());
+        for(const auto &relative: {QStringLiteral("../PlugIns/gdal"),QStringLiteral("gdalplugins")}) {
+            const auto path=executable.absoluteFilePath(relative);
+            if(QFileInfo(path).isDir()) {CPLSetConfigOption("GDAL_DRIVER_PATH",path.toUtf8().constData());break;}
+        }
+    }
     for (const QString &path :
          runtimeResourceCandidates(QStringLiteral("gdal"))) {
         if (QFileInfo::exists(path)) {
@@ -77,6 +93,7 @@ void registerMapnikInputPlugins()
         if (QFileInfo::exists(path)) {
             mapnik::datasource_cache::instance().register_datasources(
                 path.toStdString());
+            break; // Prefer the bundled set; never add developer-machine plugins.
         }
     }
 #if defined(__clang__)
@@ -126,8 +143,14 @@ int main(int argc, char *argv[])
     QApplication::setApplicationVersion(QString::fromLatin1(GEOREADER_VERSION));
     configureLinuxPlatform();
     QApplication application(argc, argv);
-    QApplication::setWindowIcon(
-        QIcon(QStringLiteral(":/icons/georeader.svg")));
+#ifdef Q_OS_LINUX
+    // Match the installed desktop entry for GNOME/KDE/Wayland taskbar identity.
+    QGuiApplication::setDesktopFileName(QStringLiteral("com.georeader"));
+#endif
+    QIcon applicationIcon;
+    for (int size : {16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 128, 256, 512, 1024})
+        applicationIcon.addFile(QStringLiteral(":/icons/%1.png").arg(size), QSize(size, size));
+    QApplication::setWindowIcon(applicationIcon);
 
     QCommandLineParser parser;
     parser.setApplicationDescription(
@@ -157,6 +180,12 @@ int main(int argc, char *argv[])
         QStringLiteral("attribute-table-row"),
         QStringLiteral("Open the attribute table for a vector layer row during UI testing."),
         QStringLiteral("row"));
+#ifdef GEOREADER_UI_TESTS
+    const QCommandLineOption scientificUiTest("scientific-ui-test", "Run scientific-data interaction tests.");
+    parser.addOption(scientificUiTest);
+#endif
+    const QCommandLineOption runtimeCheck("runtime-check", "Verify bundled GDAL drivers and supplied scientific files.");
+    parser.addOption(runtimeCheck);
     parser.addOption(smokeTestOption);
     parser.addOption(screenshotOption);
     parser.addOption(panelOption);
@@ -168,6 +197,13 @@ int main(int argc, char *argv[])
                                  QStringLiteral("[files...]"));
     parser.process(application);
 
+#ifdef GEOREADER_UI_TESTS
+    if(parser.isSet(scientificUiTest)) {
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,QDir::current().absoluteFilePath("tests/output/settings"));
+        QQuickStyle::setStyle(QStringLiteral("Fusion"));
+    } else
+#endif
     QQuickStyle::setStyle(AppController::savedOrPlatformStyle());
     QTranslator translator;
     applyLanguage(application, translator,
@@ -175,6 +211,24 @@ int main(int argc, char *argv[])
     configureGdalData();
     registerMapnikInputPlugins();
     GDALAllRegister();
+
+    if(parser.isSet(runtimeCheck)) {
+        QVariantMap report;bool ok=true;QVariantList drivers,files;
+        for(const auto &name: {"netCDF","HDF5","HDF4"}) {bool present=GetGDALDriverManager()->GetDriverByName(name)!=nullptr;drivers<<QVariantMap{{"name",QString::fromLatin1(name)},{"available",present}};ok=ok&&present;}
+        report["drivers"]=drivers;report["gdalVersion"]=QString::fromUtf8(GDALVersionInfo("RELEASE_NAME"));
+#ifdef Q_OS_MACOS
+        Dl_info location{};if(dladdr(reinterpret_cast<void *>(&GDALVersionInfo),&location))report["gdalLibrary"]=QString::fromUtf8(location.dli_fname);
+#endif
+        for(const auto &file:parser.positionalArguments()) {
+            auto catalog=ScientificData::catalog(file);bool opened=catalog.value("error").toString().isEmpty();
+            if(opened) {auto variables=catalog.value("variables").toList();auto v=variables.first().toMap();auto dims=v.value("dimensions").toList();QVariantList indices;for(int i=0;i<dims.size();++i)indices<<0;
+                QVariantMap s{{"file",file},{"array",v.value("name")},{"x",v.value("x")},{"y",v.value("y")},{"time",v.value("time")},{"indices",indices}};
+                opened=ScientificData::preview(ScientificData::encode(s)).contains("image");}
+            files<<QVariantMap{{"file",file},{"read",opened}};ok=ok&&opened;
+        }
+        report["files"]=files;report["ok"]=ok;
+        fprintf(stdout,"%s\n",QJsonDocument::fromVariant(report).toJson().constData());return ok?0:1;
+    }
 
     qmlRegisterType<MapCanvas>("GeoReader", 1, 0, "MapCanvas");
 
@@ -195,6 +249,12 @@ int main(int argc, char *argv[])
     engine.loadFromModule(QStringLiteral("GeoReader"), QStringLiteral("Main"));
     if (engine.rootObjects().isEmpty())
         return EXIT_FAILURE;
+#ifdef GEOREADER_UI_TESTS
+    if (parser.isSet(scientificUiTest)) {
+        QTimer::singleShot(200, &application, [&] { application.exit(runScientificUiTests(engine, controller)); });
+        return application.exec();
+    }
+#endif
     if (parser.isSet(panelOption)) {
         engine.rootObjects().first()->setProperty(
             "activePanel", parser.value(panelOption));

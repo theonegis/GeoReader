@@ -30,7 +30,7 @@ ApplicationWindow {
         if (activePanel === "vector") {
             mapCanvas.inspectionMode = "vector"
             ensureVectorLayerSelection()
-        } else if (activePanel === "raster") {
+        } else if (activePanel === "raster" || activePanel === "time") {
             mapCanvas.inspectionMode = "raster"
         } else {
             mapCanvas.inspectionMode = "pan"
@@ -134,7 +134,7 @@ ApplicationWindow {
 
     function togglePanel(name) {
         const nextPanel = activePanel === name ? "" : name
-        if (activePanel === "vector" && nextPanel !== "vector")
+        if ((activePanel === "vector" || activePanel === "time") && nextPanel !== activePanel)
             mapCanvas.clearSelectedFeature()
         activePanel = nextPanel
     }
@@ -193,6 +193,15 @@ ApplicationWindow {
         }
     }
 
+    ScientificBrowser {
+        id: scientificBrowser
+        anchors.fill: parent
+        z: 150
+        controller: app
+        active: window.activePanel === "time"
+        onActivated: window.activePanel = "time"
+    }
+
     MapCanvas {
         id: mapCanvas
         objectName: "mapCanvas"
@@ -200,6 +209,10 @@ ApplicationWindow {
         layerModel: app.layerModel
 
         onMapClicked: function(longitude, latitude) {
+            if (window.activePanel === "time") {
+                scientificBrowser.clickMap(longitude, latitude)
+                mapCanvas.setSelectedFeatureWkt("POINT (" + longitude + " " + latitude + ")")
+            }
             if (window.activePanel === "vector")
                 window.updateVectorSelection(longitude, latitude)
         }
@@ -411,6 +424,7 @@ ApplicationWindow {
                     required property color lineColor
                     required property color fillColor
                     required property real lineWidth
+                    required property bool scientific
                     required property int bandCount
                     required property int redBand
                     required property int greenBand
@@ -522,7 +536,7 @@ ApplicationWindow {
                                 anchors.centerIn: parent
                                 width: 16
                                 height: 16
-                                visible: layerDelegate.layerType === "raster"
+                                visible: layerDelegate.layerType === "raster" && !layerDelegate.scientific
                                 name: "raster"
                                 color: "white"
                             }
@@ -736,9 +750,16 @@ ApplicationWindow {
                             }
                         }
 
+                        Button {
+                            Layout.fillWidth: true
+                            visible: layerDelegate.scientific
+                            text: qsTr("变量切片 / 像元时序")
+                            onClicked: scientificBrowser.showLayer(app.layerModel.get(layerDelegate.index).layerId)
+                        }
+
                         RowLayout {
                             Layout.fillWidth: true
-                            visible: layerDelegate.layerType === "raster"
+                            visible: layerDelegate.layerType === "raster" && !layerDelegate.scientific
                             Label {
                                 text: qsTr("拉伸方式")
                                 font.pixelSize: 11
@@ -782,7 +803,7 @@ ApplicationWindow {
 
                         ColumnLayout {
                             Layout.fillWidth: true
-                            visible: layerDelegate.layerType === "raster"
+                            visible: layerDelegate.layerType === "raster" && !layerDelegate.scientific
                                      && layerDelegate.bandCount > 1
                             spacing: 5
 
@@ -875,7 +896,7 @@ ApplicationWindow {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            visible: layerDelegate.layerType === "raster"
+                            visible: layerDelegate.layerType === "raster" && !layerDelegate.scientific
                                      && layerDelegate.bandCount === 1
                             Label { text: qsTr("色带"); font.pixelSize: 11 }
                             ComboBox {
@@ -897,7 +918,7 @@ ApplicationWindow {
 
                         GridLayout {
                             Layout.fillWidth: true
-                            visible: layerDelegate.layerType === "raster"
+                            visible: layerDelegate.layerType === "raster" && !layerDelegate.scientific
                                      && stretchModeBox.currentValue === "minmax"
                             columns: 5
                             columnSpacing: 6
@@ -1092,7 +1113,7 @@ ApplicationWindow {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            visible: layerDelegate.layerType === "raster"
+                            visible: layerDelegate.layerType === "raster" && !layerDelegate.scientific
                             CheckBox {
                                 id: noDataCheck
                                 text: qsTr("NoData 透明")

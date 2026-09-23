@@ -1,20 +1,17 @@
 #include "AppController.h"
+#include "ScientificData.h"
+#include <QtConcurrent>
+#include <QFutureWatcher>
+#include <QSaveFile>
 
 #include <QApplication>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
 #include <QFontDatabase>
-#include <QFutureWatcher>
-#include <QLocale>
-#include <QPointer>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStringList>
-#include <QTimer>
-#include <QUuid>
-#include <QVector>
-#include <QtConcurrent>
 
 #include <gdal.h>
 #include <gdal_priv.h>
@@ -50,14 +47,13 @@ const QHash<QString, QString> kDefaultShortcuts {
 
 QString platformDefaultStyle()
 {
+#if defined(Q_OS_MACOS)
+    return QStringLiteral("macOS");
+#elif defined(Q_OS_WIN)
     return QStringLiteral("FluentWinUI3");
-}
-
-QString systemDefaultLanguage()
-{
-    return QLocale::system().language() == QLocale::Chinese
-        ? QStringLiteral("zh_CN")
-        : QStringLiteral("en_US");
+#else
+    return QStringLiteral("Material");
+#endif
 }
 
 QString srsDisplayName(const OGRSpatialReference *srs)
@@ -180,49 +176,18 @@ std::pair<double, double> approximateBandRange(GDALRasterBand *band)
     double maximum = 0.0;
     double mean = 0.0;
     double standardDeviation = 0.0;
-    const bool hasCachedStatistics =
-        band->GetStatistics(TRUE, FALSE, &minimum, &maximum, &mean,
-                            &standardDeviation) == CE_None
-        && std::isfinite(minimum) && std::isfinite(maximum);
-
-    if (!hasCachedStatistics) {
-        constexpr int kSampleDimension = 128;
-        const int sampleWidth =
-            std::clamp(band->GetXSize(), 1, kSampleDimension);
-        const int sampleHeight =
-            std::clamp(band->GetYSize(), 1, kSampleDimension);
-        QVector<double> sampleValues(
-            static_cast<qsizetype>(sampleWidth) * sampleHeight);
-        GDALRasterIOExtraArg arguments;
-        INIT_RASTERIO_EXTRA_ARG(arguments);
-        arguments.eResampleAlg = GRIORA_NearestNeighbour;
-
-        const bool sampled =
-            band->RasterIO(GF_Read, 0, 0, band->GetXSize(), band->GetYSize(),
-                           sampleValues.data(), sampleWidth, sampleHeight,
-                           GDT_Float64, 0, 0, &arguments) == CE_None;
-        int hasNoData = FALSE;
-        const double noData = band->GetNoDataValue(&hasNoData);
-        minimum = std::numeric_limits<double>::infinity();
-        maximum = -std::numeric_limits<double>::infinity();
-        if (sampled) {
-            for (const double value : sampleValues) {
-                if (!std::isfinite(value)
-                    || (hasNoData && value == noData)) {
-                    continue;
-                }
-                minimum = std::min(minimum, value);
-                maximum = std::max(maximum, value);
-            }
-        }
-
-        if (!std::isfinite(minimum) || !std::isfinite(maximum)) {
+    if (band->GetStatistics(TRUE, FALSE, &minimum, &maximum, &mean,
+                            &standardDeviation) != CE_None
+        || !std::isfinite(minimum) || !std::isfinite(maximum)) {
+        int hasMinimum = FALSE;
+        int hasMaximum = FALSE;
+        minimum = band->GetMinimum(&hasMinimum);
+        maximum = band->GetMaximum(&hasMaximum);
+        if (!hasMinimum || !hasMaximum) {
             switch (band->GetRasterDataType()) {
             case GDT_Byte: return {0.0, 255.0};
             case GDT_UInt16: return {0.0, 65535.0};
             case GDT_Int16: return {-32768.0, 32767.0};
-            case GDT_UInt32: return {0.0, 4294967295.0};
-            case GDT_Int32: return {-2147483648.0, 2147483647.0};
             default: return {0.0, 1.0};
             }
         }
@@ -235,50 +200,6 @@ std::pair<double, double> approximateBandRange(GDALRasterBand *band)
     }
     return {minimum, maximum};
 }
-
-std::pair<double, double> dataTypeRange(GDALDataType type)
-{
-    switch (type) {
-    case GDT_Byte: return {0.0, 255.0};
-    case GDT_UInt16: return {0.0, 65535.0};
-    case GDT_Int16: return {-32768.0, 32767.0};
-    case GDT_UInt32: return {0.0, 4294967295.0};
-    case GDT_Int32: return {-2147483648.0, 2147483647.0};
-    default: return {0.0, 1.0};
-    }
-}
-
-std::pair<double, double> initialBandRange(GDALRasterBand *band)
-{
-    if (!band)
-        return {0.0, 1.0};
-    double minimum = 0.0;
-    double maximum = 0.0;
-    double mean = 0.0;
-    double standardDeviation = 0.0;
-    if (band->GetStatistics(TRUE, FALSE, &minimum, &maximum, &mean,
-                            &standardDeviation) == CE_None
-        && std::isfinite(minimum) && std::isfinite(maximum)
-        && minimum < maximum) {
-        return {minimum, maximum};
-    }
-    int hasMinimum = FALSE;
-    int hasMaximum = FALSE;
-    minimum = band->GetMinimum(&hasMinimum);
-    maximum = band->GetMaximum(&hasMaximum);
-    if (hasMinimum && hasMaximum && std::isfinite(minimum)
-        && std::isfinite(maximum) && minimum < maximum) {
-        return {minimum, maximum};
-    }
-    return dataTypeRange(band->GetRasterDataType());
-}
-
-struct RasterStatistics
-{
-    QString layerId;
-    QVector<double> minimums;
-    QVector<double> maximums;
-};
 
 QString noDataText(double value)
 {
@@ -303,25 +224,22 @@ OgrTransformPtr toWgs84(const OGRSpatialReference *source)
 } // namespace
 
 AppController::AppController(QObject *parent)
-    : QObject(parent),
-      m_attributeTableModel(&m_layerModel, this)
+    : QObject(parent)
 {
     GDALAllRegister();
     QSettings settings(QString::fromLatin1(kOrganization), QString::fromLatin1(kApplication));
-    const QString savedFont =
-        settings.value(QStringLiteral("ui/fontFamily"),
-                       QApplication::font().family()).toString();
-    m_fontFamily = QFontDatabase::families().contains(savedFont)
-        ? savedFont : QApplication::font().family();
+    m_fontFamily = settings.value(QStringLiteral("ui/fontFamily"),
+                                  QApplication::font().family()).toString();
     m_fontSize = settings.value(QStringLiteral("ui/fontSize"), 13).toInt();
     m_qtStyle = settings.value(QStringLiteral("ui/qtStyle"),
                                platformDefaultStyle()).toString();
-    m_language = settings.value(QStringLiteral("ui/language"),
-                                systemDefaultLanguage()).toString();
-    m_toolBarOpacity =
-        std::clamp(settings.value(QStringLiteral("ui/toolBarOpacity"), 0.85)
-                       .toDouble(),
-                   0.5, 1.0);
+    m_toolBarOpacity = QSettings(kOrganization,kApplication).value("ui/toolBarOpacity",.85).toDouble();
+    connect(&m_layerModel, &LayerModel::countChanged, this, [this] {
+        if(!m_inspectedId.isEmpty() && m_layerModel.rowForId(m_inspectedId)<0) {
+            ++m_previewGeneration; ++m_seriesGeneration;m_inspectedId.clear();m_scientificView.clear();m_timeSeries.clear();
+            emit scientificViewChanged();emit timeSeriesChanged();
+        }
+    });
     setStatus(tr("准备就绪"));
 }
 
@@ -336,42 +254,19 @@ QString AppController::savedOrPlatformStyle()
     return settings.value(QStringLiteral("ui/qtStyle"), platformDefaultStyle()).toString();
 }
 
-QString AppController::savedOrSystemLanguage()
-{
-    QSettings settings(QString::fromLatin1(kOrganization),
-                       QString::fromLatin1(kApplication));
-    const QString saved = settings.value(QStringLiteral("ui/language"),
-                                         systemDefaultLanguage()).toString();
-    return saved.startsWith(QStringLiteral("en"), Qt::CaseInsensitive)
-        ? QStringLiteral("en_US")
-        : QStringLiteral("zh_CN");
-}
-
 void AppController::openFiles()
 {
-    QSettings settings(QString::fromLatin1(kOrganization),
-                       QString::fromLatin1(kApplication));
-    const QString documentsPath =
-        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-    const QString savedPath =
-        settings.value(QStringLiteral("files/lastOpenDirectory"),
-                       documentsPath).toString();
-    // 仅复用仍然存在的目录，避免移动磁盘、网络目录离线后文件对话框
-    // 停留在无效位置。
-    const QString startPath =
-        QFileInfo(savedPath).isDir() ? savedPath : documentsPath;
+    QString startPath = QSettings(kOrganization, kApplication).value("files/lastDirectory", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+    if (!QFileInfo(startPath).isDir()) startPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
     const QString filter =
-        tr("空间数据 (*.shp *.geojson *.json *.gpkg *.tif *.tiff);;"
+        tr("空间数据 (*.shp *.geojson *.json *.gpkg *.tif *.tiff *.h5 *.hdf5 *.he5 *.hdf *.h4 *.hdf4 *.hdf-eos *.nc *.nc4 *.cdf);;"
            "矢量数据 (*.shp *.geojson *.json *.gpkg);;"
-           "栅格数据 (*.tif *.tiff);;所有文件 (*)");
+           "栅格数据 (*.tif *.tiff *.h5 *.hdf5 *.he5 *.hdf *.h4 *.hdf4 *.hdf-eos *.nc *.nc4 *.cdf);;所有文件 (*)");
     const QStringList paths = QFileDialog::getOpenFileNames(
         nullptr, tr("打开空间数据"), startPath, filter, nullptr, {});
     if (paths.isEmpty())
         return;
 
-    settings.setValue(
-        QStringLiteral("files/lastOpenDirectory"),
-        QFileInfo(paths.constFirst()).absolutePath());
     loadFiles(paths);
 }
 
@@ -424,34 +319,6 @@ void AppController::setQtStyle(const QString &style)
     setStatus(tr("Qt Quick 样式将在下次启动时应用"));
 }
 
-void AppController::setLanguage(const QString &language)
-{
-    const QString normalized =
-        language.startsWith(QStringLiteral("en"), Qt::CaseInsensitive)
-        ? QStringLiteral("en_US")
-        : QStringLiteral("zh_CN");
-    if (normalized == m_language)
-        return;
-
-    m_language = normalized;
-    QSettings(QString::fromLatin1(kOrganization),
-              QString::fromLatin1(kApplication))
-        .setValue(QStringLiteral("ui/language"), normalized);
-    emit languageChanged();
-}
-
-void AppController::setToolBarOpacity(double opacity)
-{
-    opacity = std::clamp(opacity, 0.5, 1.0);
-    if (qFuzzyCompare(m_toolBarOpacity, opacity))
-        return;
-    m_toolBarOpacity = opacity;
-    QSettings(QString::fromLatin1(kOrganization),
-              QString::fromLatin1(kApplication))
-        .setValue(QStringLiteral("ui/toolBarOpacity"), opacity);
-    emit toolBarOpacityChanged();
-}
-
 QString AppController::shortcut(const QString &action) const
 {
     const QString fallback = kDefaultShortcuts.value(action);
@@ -484,6 +351,12 @@ void AppController::loadDataset(const QString &path)
         return;
     }
 
+    const auto suffix = QFileInfo(path).suffix().toLower();
+    if (QStringList{"h5","hdf5","he5","hdf","h4","hdf4","hdf-eos","nc","nc4","cdf"}.contains(suffix)) {
+        m_scientificQueue << path;
+        nextScientificFile();
+        return;
+    }
     GdalDatasetPtr vectorDataset(
         static_cast<GDALDataset *>(GDALOpenEx(path.toUtf8().constData(),
                                               GDAL_OF_VECTOR | GDAL_OF_READONLY,
@@ -548,18 +421,17 @@ void AppController::addVectorLayers(const QString &path)
     setStatus(tr("已加载 %1 个矢量图层").arg(added));
 }
 
-void AppController::addRasterLayer(const QString &path)
+void AppController::addRasterLayer(const QString &path, const QString &name)
 {
-    GdalDatasetPtr dataset(
-        static_cast<GDALDataset *>(GDALOpenEx(path.toUtf8().constData(),
-                                              GDAL_OF_RASTER | GDAL_OF_READONLY,
-                                              nullptr, nullptr, nullptr)),
-        GDALClose);
-    if (!dataset)
-        return;
-
+    std::lock_guard lock(ScientificData::ioMutex());
+    auto dataset = ScientificData::open(path);
+    if (!dataset || dataset->GetRasterCount() == 0) {
+        setStatus(tr("无法打开变量切片")); return;
+    }
+    const bool scientific = !ScientificData::decode(path).isEmpty();
     double transform[6] {};
-    if (dataset->GetGeoTransform(transform) != CE_None) {
+    const bool geographic = dataset->GetSpatialRef() && dataset->GetGeoTransform(transform) == CE_None;
+    if (!geographic && !scientific) {
         setStatus(tr("栅格缺少有效的地理参考：%1").arg(QFileInfo(path).fileName()));
         return;
     }
@@ -585,22 +457,21 @@ void AppController::addRasterLayer(const QString &path)
     extent.MaxY = *std::max_element(std::begin(ys), std::end(ys));
 
     LayerSnapshot layer;
-    layer.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     layer.path = path;
-    layer.name = QFileInfo(path).completeBaseName();
+    layer.name = name.isEmpty() ? QFileInfo(path).completeBaseName() : name;
+    layer.scientific = scientific;
+    layer.geographic = geographic;
     layer.type = QStringLiteral("raster");
     layer.bandCount = dataset->GetRasterCount();
     layer.redBand = 1;
     layer.greenBand = std::min(2, layer.bandCount);
     layer.blueBand = std::min(3, layer.bandCount);
     layer.grayBand = 1;
-    layer.rasterMode = layer.bandCount >= 3 ? QStringLiteral("rgb") : QStringLiteral("single");
+    layer.rasterMode = !scientific && layer.bandCount >= 3 ? QStringLiteral("rgb") : QStringLiteral("single");
     bool foundNoData = false;
     for (int bandIndex = 1; bandIndex <= layer.bandCount; ++bandIndex) {
         GDALRasterBand *band = dataset->GetRasterBand(bandIndex);
-        // Metadata and data-type defaults are effectively instant. A more
-        // representative sample is calculated after the layer is visible.
-        const auto [minimum, maximum] = initialBandRange(band);
+        const auto [minimum, maximum] = approximateBandRange(band);
         layer.bandMinimums.push_back(minimum);
         layer.bandMaximums.push_back(maximum);
 
@@ -613,7 +484,8 @@ void AppController::addRasterLayer(const QString &path)
             }
         }
     }
-    layer.noDataEnabled = true;
+    layer.noDataEnabled = foundNoData;
+    if (scientific) layer.stretchMode = QStringLiteral("percent_clip");
     layer.srs = srsProjString(dataset->GetSpatialRef());
     layer.crsLabel = srsDisplayName(dataset->GetSpatialRef());
     if (!extentToWgs84(extent, dataset->GetSpatialRef(),
@@ -623,83 +495,26 @@ void AppController::addRasterLayer(const QString &path)
     }
 
     m_layerModel.addLayer(layer);
-    emit layerAdded(layer.minLon, layer.minLat, layer.maxLon, layer.maxLat);
+    if (geographic) emit layerAdded(layer.minLon, layer.minLat, layer.maxLon, layer.maxLat);
     setStatus(tr("已加载栅格图层：%1（%2 个波段）")
               .arg(layer.name).arg(layer.bandCount));
-
-    const QString layerId = layer.id;
-    QPointer<AppController> self(this);
-    // Let the first viewport render win the initial I/O bandwidth. Statistics
-    // are useful for refinement, but must not delay the first visible frame.
-    QTimer::singleShot(1500, this, [self, path, layerId] {
-        if (!self)
-            return;
-        auto *watcher = new QFutureWatcher<RasterStatistics>(self);
-        QObject::connect(
-            watcher, &QFutureWatcher<RasterStatistics>::finished, self,
-            [self, watcher] {
-                const RasterStatistics statistics = watcher->result();
-                watcher->deleteLater();
-                if (self)
-                    self->m_layerModel.setBandRanges(
-                        statistics.layerId, statistics.minimums,
-                        statistics.maximums);
-            });
-        watcher->setFuture(QtConcurrent::run([path, layerId] {
-            RasterStatistics statistics;
-            statistics.layerId = layerId;
-            GdalDatasetPtr source(
-                static_cast<GDALDataset *>(GDALOpenEx(
-                    path.toUtf8().constData(),
-                    GDAL_OF_RASTER | GDAL_OF_READONLY,
-                    nullptr, nullptr, nullptr)),
-                GDALClose);
-            if (!source)
-                return statistics;
-            statistics.minimums.reserve(source->GetRasterCount());
-            statistics.maximums.reserve(source->GetRasterCount());
-            for (int bandIndex = 1;
-                 bandIndex <= source->GetRasterCount(); ++bandIndex) {
-                const auto [minimum, maximum] =
-                    approximateBandRange(source->GetRasterBand(bandIndex));
-                statistics.minimums.push_back(minimum);
-                statistics.maximums.push_back(maximum);
-            }
-            return statistics;
-        }));
-    });
 }
 
 QVariantList AppController::queryRasters(double longitude, double latitude) const
 {
-    // Identify runs on the GUI thread. Reusing read-only handles avoids an
-    // expensive GDALOpenEx/metadata scan for every mouse-move sample.
-    static QHash<QString, std::shared_ptr<GDALDataset>> datasetCache;
+    std::lock_guard lock(ScientificData::ioMutex());
     QVariantList result;
     for (const auto &layer : m_layerModel.snapshots()) {
-        if (!layer.visible || layer.type != QStringLiteral("raster"))
+        if (!layer.visible || !layer.geographic || layer.type != QStringLiteral("raster"))
             continue;
-        auto dataset = datasetCache.value(layer.path);
-        if (!dataset) {
-            dataset = std::shared_ptr<GDALDataset>(
-                static_cast<GDALDataset *>(GDALOpenEx(
-                    layer.path.toUtf8().constData(),
-                    GDAL_OF_RASTER | GDAL_OF_READONLY,
-                    nullptr, nullptr, nullptr)),
-                [](GDALDataset *handle) {
-                    if (handle)
-                        GDALClose(handle);
-                });
-            if (dataset)
-                datasetCache.insert(layer.path, dataset);
-        }
+        auto dataset = ScientificData::open(layer.path);
         if (!dataset)
             continue;
 
         double x = longitude;
         double y = latitude;
         if (auto transform = wgs84To(dataset->GetSpatialRef()); transform)
-            transform->Transform(1, &x, &y);
+            if (!transform->Transform(1, &x, &y)) continue;
 
         double geoTransform[6] {};
         double inverse[6] {};
@@ -817,190 +632,121 @@ QVariantMap AppController::queryVector(int row, double longitude, double latitud
     };
 }
 
-QVariantMap AppController::layerMetadata(int row) const
-{
-    const LayerSnapshot *layer = m_layerModel.layerAt(row);
-    if (!layer)
-        return {};
-
-    QVariantList entries;
-    const auto addEntry =
-        [&entries](const QString &section, const QString &name,
-                   const QString &value) {
-            entries.push_back(QVariantMap {
-                {QStringLiteral("section"), section},
-                {QStringLiteral("name"), name},
-                {QStringLiteral("value"),
-                 value.isEmpty() ? QStringLiteral("—") : value}
-            });
-        };
-
-    const QFileInfo fileInfo(layer->path);
-    const QString general = tr("常规");
-    const QString spatial = tr("空间信息");
-    addEntry(general, tr("名称"), layer->name);
-    addEntry(general, tr("文件"), fileInfo.absoluteFilePath());
-    addEntry(general, tr("文件大小"),
-             QLocale().formattedDataSize(fileInfo.size()));
-    addEntry(spatial, tr("坐标参考系"),
-             layer->crsLabel.isEmpty() ? tr("未知坐标系")
-                                       : layer->crsLabel);
-    addEntry(spatial, tr("WGS 84 范围"),
-             QStringLiteral("%1, %2 — %3, %4")
-                 .arg(layer->minLon, 0, 'g', 12)
-                 .arg(layer->minLat, 0, 'g', 12)
-                 .arg(layer->maxLon, 0, 'g', 12)
-                 .arg(layer->maxLat, 0, 'g', 12));
-
-    // 元信息按需读取，普通加载路径只做首帧显示所需的最小扫描。长 WKT、
-    // 字段定义、块大小等详情不会拖慢“打开文件”操作。
-    if (layer->type == QStringLiteral("vector")) {
-        GdalDatasetPtr dataset(
-            static_cast<GDALDataset *>(GDALOpenEx(
-                layer->path.toUtf8().constData(),
-                GDAL_OF_VECTOR | GDAL_OF_READONLY,
-                nullptr, nullptr, nullptr)),
-            GDALClose);
-        if (!dataset)
-            return {{QStringLiteral("title"), layer->name},
-                    {QStringLiteral("entries"), entries}};
-
-        OGRLayer *source =
-            dataset->GetLayerByName(layer->sourceLayer.toUtf8().constData());
-        if (!source)
-            source = dataset->GetLayer(0);
-        const QString vector = tr("矢量数据");
-        addEntry(general, tr("驱动"),
-                 QString::fromUtf8(dataset->GetDriverName()));
-        addEntry(vector, tr("源图层"), layer->sourceLayer);
-        addEntry(vector, tr("几何类型"),
-                 source ? QString::fromUtf8(
-                              OGRGeometryTypeToName(source->GetGeomType()))
-                        : layer->geometryType);
-        addEntry(vector, tr("要素数量"),
-                 source ? QString::number(source->GetFeatureCount(false))
-                        : QString());
-
-        if (source) {
-            const OGRFeatureDefn *definition = source->GetLayerDefn();
-            addEntry(vector, tr("字段数量"),
-                     definition
-                         ? QString::number(definition->GetFieldCount())
-                         : QStringLiteral("0"));
-            if (definition) {
-                QStringList fieldDescriptions;
-                fieldDescriptions.reserve(definition->GetFieldCount());
-                for (int field = 0; field < definition->GetFieldCount();
-                     ++field) {
-                    const OGRFieldDefn *fieldDefinition =
-                        definition->GetFieldDefn(field);
-                    fieldDescriptions.push_back(
-                        QStringLiteral("%1 (%2)")
-                            .arg(QString::fromUtf8(
-                                     fieldDefinition->GetNameRef()),
-                                 QString::fromUtf8(OGRFieldDefn::GetFieldTypeName(
-                                     fieldDefinition->GetType()))));
-                }
-                addEntry(vector, tr("字段"), fieldDescriptions.join(u'\n'));
-            }
-            const char *encoding = source->GetMetadataItem("ENCODING");
-            addEntry(vector, tr("字符编码"),
-                     encoding ? QString::fromUtf8(encoding)
-                              : QStringLiteral("UTF-8 / driver default"));
-
-            if (const OGRSpatialReference *reference =
-                    source->GetSpatialRef()) {
-                char *wkt = nullptr;
-                if (reference->exportToPrettyWkt(&wkt, false)
-                    == OGRERR_NONE && wkt) {
-                    addEntry(spatial, tr("投影定义"),
-                             QString::fromUtf8(wkt));
-                }
-                CPLFree(wkt);
-            }
-        }
-    } else {
-        GdalDatasetPtr dataset(
-            static_cast<GDALDataset *>(GDALOpenEx(
-                layer->path.toUtf8().constData(),
-                GDAL_OF_RASTER | GDAL_OF_READONLY,
-                nullptr, nullptr, nullptr)),
-            GDALClose);
-        if (!dataset)
-            return {{QStringLiteral("title"), layer->name},
-                    {QStringLiteral("entries"), entries}};
-
-        const QString raster = tr("栅格数据");
-        addEntry(general, tr("驱动"),
-                 QString::fromUtf8(dataset->GetDriverName()));
-        addEntry(raster, tr("尺寸"),
-                 QStringLiteral("%1 × %2")
-                     .arg(dataset->GetRasterXSize())
-                     .arg(dataset->GetRasterYSize()));
-        addEntry(raster, tr("波段数量"),
-                 QString::number(dataset->GetRasterCount()));
-
-        double transform[6] {};
-        if (dataset->GetGeoTransform(transform) == CE_None) {
-            addEntry(raster, tr("像素大小"),
-                     QStringLiteral("%1 × %2")
-                         .arg(std::abs(transform[1]), 0, 'g', 12)
-                         .arg(std::abs(transform[5]), 0, 'g', 12));
-            addEntry(raster, tr("仿射变换"),
-                     QStringLiteral("[%1, %2, %3, %4, %5, %6]")
-                         .arg(transform[0], 0, 'g', 12)
-                         .arg(transform[1], 0, 'g', 12)
-                         .arg(transform[2], 0, 'g', 12)
-                         .arg(transform[3], 0, 'g', 12)
-                         .arg(transform[4], 0, 'g', 12)
-                         .arg(transform[5], 0, 'g', 12));
-        }
-
-        for (int bandIndex = 1;
-             bandIndex <= dataset->GetRasterCount(); ++bandIndex) {
-            GDALRasterBand *band = dataset->GetRasterBand(bandIndex);
-            if (!band)
-                continue;
-            int blockWidth = 0;
-            int blockHeight = 0;
-            band->GetBlockSize(&blockWidth, &blockHeight);
-            int hasNoData = FALSE;
-            const double noData = band->GetNoDataValue(&hasNoData);
-            QString description =
-                tr("类型: %1\n颜色解释: %2\n块大小: %3 × %4")
-                    .arg(QString::fromLatin1(
-                             GDALGetDataTypeName(band->GetRasterDataType())),
-                         QString::fromLatin1(GDALGetColorInterpretationName(
-                             band->GetColorInterpretation())))
-                    .arg(blockWidth)
-                    .arg(blockHeight);
-            if (hasNoData)
-                description += tr("\nNoData: %1").arg(noDataText(noData));
-            addEntry(raster, tr("波段 %1").arg(bandIndex), description);
-        }
-
-        if (const OGRSpatialReference *reference =
-                dataset->GetSpatialRef()) {
-            char *wkt = nullptr;
-            if (reference->exportToPrettyWkt(&wkt, false)
-                == OGRERR_NONE && wkt) {
-                addEntry(spatial, tr("投影定义"), QString::fromUtf8(wkt));
-            }
-            CPLFree(wkt);
-        }
-    }
-
-    return {
-        {QStringLiteral("title"), layer->name},
-        {QStringLiteral("type"), layer->type},
-        {QStringLiteral("entries"), entries}
-    };
-}
-
 void AppController::setStatus(const QString &message)
 {
     if (message == m_statusMessage)
         return;
     m_statusMessage = message;
     emit statusMessageChanged();
+}
+
+QString AppController::savedOrSystemLanguage() {
+    return QSettings(kOrganization,kApplication).value("ui/language","zh_CN").toString();
+}
+void AppController::setLanguage(const QString &language) {
+    if(language!=m_language) {m_language=language;QSettings(kOrganization,kApplication).setValue("ui/language",language);emit languageChanged();}
+}
+void AppController::setToolBarOpacity(double value) {
+    m_toolBarOpacity=std::clamp(value,.3,1.0);QSettings(kOrganization,kApplication).setValue("ui/toolBarOpacity",m_toolBarOpacity);emit toolBarOpacityChanged();
+}
+QVariantMap AppController::layerMetadata(int row) const {
+    std::lock_guard lock(ScientificData::ioMutex());
+    auto l=m_layerModel.layerAt(row);if(!l)return {};
+    QVariantList entries;
+    const auto add=[&](const QString &name,const QString &value){entries<<QVariantMap{{"section",tr("数据")},{"name",name},{"value",value}};};
+    auto selection=ScientificData::decode(l->path);
+    add(tr("文件"),selection.isEmpty()?l->path:selection.value("file").toString());add(tr("坐标系"),l->geographic?l->crsLabel:tr("无地理参考（像素视图）"));
+    if(!selection.isEmpty()) add(tr("变量"),selection.value("array").toString());
+    if(l->type=="raster") {auto ds=ScientificData::open(l->path);if(ds){add(tr("驱动"),ds->GetDriverName());add(tr("尺寸"),QString("%1 × %2 × %3").arg(ds->GetRasterXSize()).arg(ds->GetRasterYSize()).arg(ds->GetRasterCount()));add(tr("投影"),ds->GetProjectionRef());}}
+    return {{"title",l->name},{"entries",entries}};
+}
+void AppController::scientificJobFinished() { --m_scientificJobs;emit scientificBusyChanged(); }
+void AppController::nextScientificFile() {
+    if(m_catalogLoading || !m_catalog.isEmpty() || m_scientificQueue.isEmpty())return;
+    QString path=m_scientificQueue.takeFirst();m_catalogLoading=true;++m_scientificJobs;emit scientificBusyChanged();
+    auto watcher=new QFutureWatcher<QVariantMap>(this);
+    connect(watcher,&QFutureWatcher<QVariantMap>::finished,this,[this,watcher]{
+        m_catalogLoading=false;m_catalog=watcher->result();watcher->deleteLater();scientificJobFinished();
+        emit scientificCatalogChanged();
+    });
+    watcher->setFuture(QtConcurrent::run([path]{return ScientificData::catalog(path);}));
+}
+void AppController::cancelScientificSelection() {m_catalog.clear();emit scientificCatalogChanged();nextScientificFile();}
+void AppController::selectScientificVariable(int variable,int x,int y,int time,const QVariantList &indices) {
+    std::lock_guard lock(ScientificData::ioMutex());
+    const auto variables=m_catalog.value("variables").toList();
+    if(variable<0 || variable>=variables.size())return;
+    auto v=variables[variable].toMap();QVariantMap s{{"file",m_catalog.value("file")},{"array",v.value("name")},{"x",x},{"y",y},{"time",time},{"indices",indices},{"dimensions",v.value("dimensions")},{"attributes",v.value("attributes")},{"unit",v.value("unit")},{"dataType",v.value("dataType")}};
+    QString path=ScientificData::encode(s);
+    auto ds=ScientificData::open(path);
+    if(!ds) {setStatus(tr("维度选择无效：X、Y、时间轴必须不同，索引不能超出范围。"));return;}
+    ds.reset();int before=m_layerModel.count();
+    addRasterLayer(path,QFileInfo(s.value("file").toString()).fileName()+" · "+v.value("name").toString());
+    if(m_layerModel.count()==before)return;
+    QSettings(kOrganization,kApplication).setValue("files/lastDirectory",QFileInfo(s.value("file").toString()).absolutePath());
+    const auto id=m_layerModel.layerAt(before)->id;inspectScientificLayer(id);cancelScientificSelection();
+}
+void AppController::inspectScientificLayer(const QString &id) {
+    auto l=m_layerModel.layerAt(m_layerModel.rowForId(id));if(!l || !l->scientific)return;
+    if(m_inspectedId!=id) {++m_seriesGeneration;m_timeSeries.clear();emit timeSeriesChanged();}
+    m_inspectedId=id;const QString path=l->path,name=l->name;const quint64 generation=++m_previewGeneration;
+    m_scientificView={{"id",id},{"name",name},{"selection",ScientificData::decode(path)}};emit scientificViewChanged();
+    ++m_scientificJobs;emit scientificBusyChanged();auto watcher=new QFutureWatcher<QVariantMap>(this);
+    connect(watcher,&QFutureWatcher<QVariantMap>::finished,this,[this,watcher,id,path,generation]{
+        auto result=watcher->result();watcher->deleteLater();scientificJobFinished();
+        auto layer=m_layerModel.layerAt(m_layerModel.rowForId(id));if(generation!=m_previewGeneration || !layer || layer->path!=path)return;
+        int row=m_layerModel.rowForId(id);
+        auto display=ScientificData::decode(path).value("display").toMap();
+        double lo=result.value("displayMinimum").toDouble(),hi=result.value("displayMaximum").toDouble();
+        if(!result.value("displayMinimum").isNull()) {
+            if(lo>=hi){double pad=std::max(1.0,std::abs(lo)*.01);lo-=pad;hi+=pad;}
+            m_layerModel.setBandRange(row,1,lo,hi);
+            m_layerModel.setRasterStyle(row,"single",1,1,1,1,display.value("ramp","Viridis").toString(),display.value("reversed").toBool(),"minmax");
+        }
+        result.insert("id",id);result.insert("name",layer->name);result.insert("selection",ScientificData::decode(path));m_scientificView=result;emit scientificViewChanged();
+    });watcher->setFuture(QtConcurrent::run([path]{return ScientificData::preview(path);}));
+}
+void AppController::setScientificSlice(const QString &id,int dimension,int index) {
+    int row=m_layerModel.rowForId(id);auto l=m_layerModel.layerAt(row);if(!l || !l->scientific)return;
+    auto s=ScientificData::decode(l->path);auto indices=s.value("indices").toList();auto dims=s.value("dimensions").toList();
+    if(dimension<0 || dimension>=indices.size() || dimension==s.value("x").toInt() || dimension==s.value("y").toInt() || index<0 || index>=dims[dimension].toMap().value("size").toLongLong())return;
+    if(indices[dimension].toInt()==index)return;
+    indices[dimension]=index;s["indices"]=indices;m_layerModel.setSource(row,ScientificData::encode(s));
+    ++m_seriesGeneration;
+    if(dimension!=s.value("time").toInt() || m_timeSeries.value("profile").toString()!="time") {m_timeSeries.clear();emit timeSeriesChanged();}
+    inspectScientificLayer(id);
+}
+void AppController::requestTimeSeries(const QString &id,double x,double y,bool geographic,const QString &profile) {
+    auto l=m_layerModel.layerAt(m_layerModel.rowForId(id));if(!l || !l->scientific || !l->visible)return;
+    QString path=l->path;const quint64 generation=++m_seriesGeneration;++m_scientificJobs;emit scientificBusyChanged();
+    m_timeSeries.clear();emit timeSeriesChanged();auto watcher=new QFutureWatcher<QVariantMap>(this);
+    connect(watcher,&QFutureWatcher<QVariantMap>::finished,this,[this,watcher,id,path,generation]{
+        auto result=watcher->result();watcher->deleteLater();scientificJobFinished();
+        auto layer=m_layerModel.layerAt(m_layerModel.rowForId(id));if(generation!=m_seriesGeneration || !layer || !layer->visible || layer->path!=path)return;
+        m_timeSeries=result;emit timeSeriesChanged();
+    });watcher->setFuture(QtConcurrent::run([path,x,y,geographic,profile]{return ScientificData::series(path,x,y,geographic,profile);}));
+}
+
+void AppController::setScientificDisplay(const QString &id,const QString &ramp,bool reversed,bool fixed,double minimum,double maximum) {
+    int row=m_layerModel.rowForId(id);auto l=m_layerModel.layerAt(row);if(!l || !l->scientific)return;
+    if(fixed && (!std::isfinite(minimum) || !std::isfinite(maximum) || minimum>=maximum)){setStatus(tr("显示最小值必须小于最大值"));return;}
+    auto s=ScientificData::decode(l->path);s["display"]=QVariantMap{{"ramp",ramp},{"reversed",reversed},{"fixed",fixed},{"minimum",minimum},{"maximum",maximum}};
+    m_layerModel.setSource(row,ScientificData::encode(s));
+    m_layerModel.setRasterStyle(row,"single",1,1,1,1,ramp,reversed,fixed?"minmax":"percent_clip");
+    if(fixed)m_layerModel.setBandRange(row,1,minimum,maximum);
+    inspectScientificLayer(id);
+}
+void AppController::exportTimeSeries() {
+    if(m_timeSeries.value("points").toList().isEmpty())return;
+    QString file=QFileDialog::getSaveFileName(nullptr,tr("导出曲线数据"),"pixel-profile.csv",tr("CSV 文件 (*.csv)"));if(file.isEmpty())return;
+    if(!file.endsWith(".csv",Qt::CaseInsensitive))file+=".csv";
+    QSaveFile output(file);const auto bytes=ScientificData::csv(m_timeSeries);
+    if(!output.open(QIODevice::WriteOnly) || output.write(bytes)!=bytes.size() || !output.commit())setStatus(tr("导出失败：%1").arg(output.errorString()));else setStatus(tr("已导出：%1").arg(file));
+}
+void AppController::exportScientificImage() {
+    const auto image=m_scientificView.value("image").toString();if(image.isEmpty())return;
+    QString file=QFileDialog::getSaveFileName(nullptr,tr("导出当前预览（最长边 800 像素）"),"variable-preview.png",tr("PNG 图像 (*.png)"));if(file.isEmpty())return;
+    if(!file.endsWith(".png",Qt::CaseInsensitive))file+=".png";
+    const auto bytes=QByteArray::fromBase64(image.section(',',1).toLatin1());QSaveFile output(file);
+    if(!output.open(QIODevice::WriteOnly)||output.write(bytes)!=bytes.size()||!output.commit())setStatus(tr("导出失败：%1").arg(output.errorString()));else setStatus(tr("已导出：%1").arg(file));
 }
