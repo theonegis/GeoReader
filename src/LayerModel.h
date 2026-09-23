@@ -104,6 +104,7 @@ public:
     QVector<LayerSnapshot> snapshots() const;
 
     Q_INVOKABLE QVariantMap get(int row) const;
+    void setScientificSource(const QString &id, const QString &source, const QString &slice);
     Q_INVOKABLE QVariantMap datasetInfo(const QString &datasetId) const;
     Q_INVOKABLE int indexOfLayer(const QString &layerId) const;
     Q_INVOKABLE void setVisible(int row, bool visible);

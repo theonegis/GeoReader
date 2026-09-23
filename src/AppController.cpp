@@ -1,3 +1,4 @@
+#include "ScientificData.h"
 #include "AppController.h"
 
 #include <QApplication>
@@ -608,12 +609,9 @@ void AppController::addRasterLayer(const QString &path,
                                    const QString &arrayFullName,
                                    const QString &sliceDescription)
 {
+    std::lock_guard guard(ScientificData::ioMutex());
     const QString rasterSource = sourceUri.isEmpty() ? path : sourceUri;
-    GdalDatasetPtr dataset(
-        static_cast<GDALDataset *>(GDALOpenEx(rasterSource.toUtf8().constData(),
-                                              GDAL_OF_RASTER | GDAL_OF_READONLY,
-                                              nullptr, nullptr, nullptr)),
-        GDALClose);
+    auto dataset = ScientificData::open(rasterSource);
     if (!dataset)
         return;
 
@@ -718,6 +716,10 @@ void AppController::addRasterLayer(const QString &path,
                       .arg(layer.name).arg(layer.bandCount));
     }
 
+    // ScientificPanel owns slice-specific physical ranges; a delayed initial
+    // statistic must not overwrite a newer slice or a user-fixed color scale.
+    if (!ScientificData::decode(rasterSource).isEmpty())
+        return;
     const QString layerId = layer.id;
     QPointer<AppController> self(this);
     // Let the first viewport render win the initial I/O bandwidth. Statistics
@@ -737,14 +739,10 @@ void AppController::addRasterLayer(const QString &path,
                         statistics.maximums);
             });
         watcher->setFuture(QtConcurrent::run([rasterSource, layerId] {
+            std::lock_guard guard(ScientificData::ioMutex());
             RasterStatistics statistics;
             statistics.layerId = layerId;
-            GdalDatasetPtr source(
-                static_cast<GDALDataset *>(GDALOpenEx(
-                    rasterSource.toUtf8().constData(),
-                    GDAL_OF_RASTER | GDAL_OF_READONLY,
-                    nullptr, nullptr, nullptr)),
-                GDALClose);
+            auto source = ScientificData::open(rasterSource);
             if (!source)
                 return statistics;
             statistics.minimums.reserve(source->GetRasterCount());
@@ -753,8 +751,12 @@ void AppController::addRasterLayer(const QString &path,
                  bandIndex <= source->GetRasterCount(); ++bandIndex) {
                 const auto [minimum, maximum] =
                     approximateBandRange(source->GetRasterBand(bandIndex));
-                statistics.minimums.push_back(minimum);
-                statistics.maximums.push_back(maximum);
+                const auto calibration = ScientificData::decode(rasterSource).isEmpty()
+                    ? std::pair<double,double>{1,0} : ScientificData::scaleOffset(rasterSource);
+                const double a = minimum * calibration.first + calibration.second;
+                const double b = maximum * calibration.first + calibration.second;
+                statistics.minimums.push_back(std::min(a,b));
+                statistics.maximums.push_back(std::max(a,b));
             }
             return statistics;
         }));
@@ -889,6 +891,7 @@ void AppController::cancelMultidimensionalImport()
 
 QVariantList AppController::queryRasters(double longitude, double latitude) const
 {
+    std::lock_guard guard(ScientificData::ioMutex());
     // Identify runs on the GUI thread. Reusing read-only handles avoids an
     // expensive GDALOpenEx/metadata scan for every mouse-move sample.
     static QHash<QString, std::shared_ptr<GDALDataset>> datasetCache;
@@ -901,15 +904,13 @@ QVariantList AppController::queryRasters(double longitude, double latitude) cons
         auto dataset = datasetCache.value(rasterSource);
         if (!dataset) {
             dataset = std::shared_ptr<GDALDataset>(
-                static_cast<GDALDataset *>(GDALOpenEx(
-                    rasterSource.toUtf8().constData(),
-                    GDAL_OF_RASTER | GDAL_OF_READONLY,
-                    nullptr, nullptr, nullptr)),
+                ScientificData::open(rasterSource).release(),
                 [](GDALDataset *handle) {
+                    std::lock_guard guard(ScientificData::ioMutex());
                     if (handle)
                         GDALClose(handle);
                 });
-            if (dataset)
+            if (dataset && ScientificData::decode(rasterSource).isEmpty())
                 datasetCache.insert(rasterSource, dataset);
         }
         if (!dataset)
@@ -1049,6 +1050,7 @@ QVariantMap AppController::queryVector(int row, double longitude, double latitud
 
 QVariantMap AppController::layerMetadata(int row) const
 {
+    std::lock_guard guard(ScientificData::ioMutex());
     const LayerSnapshot *layer = m_layerModel.layerAt(row);
     if (!layer)
         return {};
@@ -1154,12 +1156,7 @@ QVariantMap AppController::layerMetadata(int row) const
     } else {
         const QString rasterSource =
             layer->sourceUri.isEmpty() ? layer->path : layer->sourceUri;
-        GdalDatasetPtr dataset(
-            static_cast<GDALDataset *>(GDALOpenEx(
-                rasterSource.toUtf8().constData(),
-                GDAL_OF_RASTER | GDAL_OF_READONLY,
-                nullptr, nullptr, nullptr)),
-            GDALClose);
+        auto dataset = ScientificData::open(rasterSource);
         if (!dataset)
             return {{QStringLiteral("title"), layer->name},
                     {QStringLiteral("entries"), entries}};

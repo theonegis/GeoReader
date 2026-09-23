@@ -1,0 +1,6 @@
+(version 1)
+(allow default)
+; Simulate a machine with no developer-installed libraries or GDAL drivers.
+(deny file-read* (subpath "/opt/homebrew") (subpath "/usr/local"))
+(deny file-read* (subpath (param "PROJECT_DEPS")))
+(deny file-read* (subpath (param "PROJECT_BUILD")))

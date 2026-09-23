@@ -187,6 +187,9 @@ jobs:
         run: |
           installed="$GITHUB_WORKSPACE/vcpkg_installed"
           export GEOREADER_VCPKG_RUNTIME_ROOT="$installed/${{ matrix.triplet }}"
+          python3 scripts/build_minimal_gdal.py --deployment-target 12.0
+          export GEOREADER_GDAL_PREFIX="$PWD/.test-deps/gdal-minimal"
+          export GEOREADER_REQUIRE_MACOS12=1
           ./scripts/build.sh --type Release --clean-first --package --package-format dmg -- \
             -DCMAKE_OSX_ARCHITECTURES=${{ matrix.architecture }} \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
@@ -304,6 +307,8 @@ jobs:
             "$installed/x64-windows-release/lib/pkgconfig"
             "$installed/x64-windows-release/share/pkgconfig"
           ) -join ";"
+          python scripts/build_minimal_gdal.py --dependency-prefix "$installed/x64-windows-release" --install-runtime
+          if ($LASTEXITCODE -ne 0) { throw "Minimal GDAL runtime build failed." }
           .\scripts\build.ps1 -Type Release -CleanFirst -Package -PackageFormat nsis `
             -CMakeArgs @(
               "-DCMAKE_CXX_COMPILER=cl.exe"
@@ -446,6 +451,12 @@ jobs:
           path: vcpkg_installed
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
+      - name: Build scientific GDAL runtime
+        run: |
+          python3 scripts/build_minimal_gdal.py \
+            --dependency-prefix "$GITHUB_WORKSPACE/vcpkg_installed/x64-linux-release" \
+            --install-runtime
+
       - name: Prepare relocatable vcpkg runtime
         run: |
           triplet_root="$GITHUB_WORKSPACE/vcpkg_installed/x64-linux-release"
@@ -521,8 +532,6 @@ jobs:
                 '*/mapnik/input/ogr.input' "Mapnik OGR input plugin"
             fi
             require_package_entry "$package_name" "$package_root" \
-              '*/mapnik/input/raster.input' "Mapnik raster input plugin"
-            require_package_entry "$package_name" "$package_root" \
               '*/mapnik/input/shape.input' "Mapnik shape input plugin"
             require_package_entry "$package_name" "$package_root" \
               '*/platforms/libqoffscreen.so' "Qt offscreen platform plugin"
@@ -540,6 +549,10 @@ jobs:
 
           executable="$deb_root/usr/bin/GeoReader"
           test -x "$executable"
+          QT_QPA_PLATFORM=offscreen "$executable" --runtime-check \
+            "$GITHUB_WORKSPACE/tests/data/netcdf4.nc" \
+            "$GITHUB_WORKSPACE/tests/data/scientific.h5" \
+            "$GITHUB_WORKSPACE/tests/data/scientific.hdf"
 
           offscreen_plugin="$(find "$deb_root" \
             -path '*/platforms/libqoffscreen.so' -print -quit)"
@@ -554,7 +567,7 @@ jobs:
           mapfile -t mapnik_plugins < <(
             find "$deb_root" -path '*/mapnik/input/*.input' -type f -print
           )
-          test "${#mapnik_plugins[@]}" -ge 4
+          test "${#mapnik_plugins[@]}" -ge 3
           for runtime_file in \
               "$executable" \
               "$offscreen_plugin" \

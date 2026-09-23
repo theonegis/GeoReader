@@ -35,7 +35,6 @@ class ReleaseTripletTests(unittest.TestCase):
             "gdal+ogr.input",
             "gdal.input",
             "ogr.input",
-            "raster.input",
             "shape.input",
         ):
             self.assertIn(plugin, cmake)
@@ -226,27 +225,15 @@ class ReleaseTripletTests(unittest.TestCase):
         self.assertIn("GeoReader.app/Contents/Resources", cmake)
         self.assertIn("LSMinimumSystemVersion", plist)
         self.assertIn("${CMAKE_OSX_DEPLOYMENT_TARGET}", plist)
-        for expected in (
-            "version_exceeds_macos_12",
-            "list_macho_load_dependencies",
-            'Contents/PlugIns/sqldrivers',
-            'rm -rf -- "$unused_sql_plugins"',
-            'LC_LOAD_DYLIB',
-            'LC_LOAD_WEAK_DYLIB',
-            'LC_REEXPORT_DYLIB',
-            "audit_errors=()",
-            "Cannot inspect Mach-O dependencies",
-            "xcrun vtool -show-build",
-            "Unexpected LSMinimumSystemVersion",
-            "Unbundled macOS dependency",
-            "Verified macOS 12 compatibility",
-            "create_dmg_with_retries",
-            "max_attempts=4",
-            'rm -f -- "$local_dmg_path"',
-            "sleep $((attempt * 5))",
-        ):
+        bundler = (PROJECT_ROOT / "scripts" / "bundle_macos.py").read_text()
+        self.assertIn("GEOREADER_REQUIRE_MACOS12", bundler)
+        self.assertIn("LC_BUILD_VERSION", bundler)
+        self.assertIn("LSMinimumSystemVersion", bundler)
+        self.assertIn("audit_macos_bundle.py", package_script)
+        self.assertIn("--runtime-check", package_script)
+        for expected in ("create_dmg_with_retries", "max_attempts=4",
+                         'rm -f -- "$local_dmg_path"', "sleep $((attempt * 5))"):
             self.assertIn(expected, package_script)
-        self.assertNotIn('$2 == "LC_ID_DYLIB"', package_script)
 
     def test_packaging_workflow_explicitly_builds_release_only(self) -> None:
         workflow = (
@@ -341,7 +328,6 @@ class ReleaseTripletTests(unittest.TestCase):
             'ldd "$runtime_file"',
             "--smoke-test",
             "mapnik/input/geojson.input",
-            "mapnik/input/raster.input",
             "mapnik/input/shape.input",
             "libqoffscreen",
             "libqwayland*.so",

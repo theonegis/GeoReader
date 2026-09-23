@@ -1,3 +1,4 @@
+#include "ScientificPanel.h"
 #include "MainWindow.h"
 
 #include "AppController.h"
@@ -115,7 +116,7 @@ protected:
         painter.setClipPath(clipPath);
 
         if (m_backdrop && m_backdrop->isVisible()) {
-            const QPoint sourceTopLeft = mapTo(m_backdrop, QPoint(0, 0));
+            const QPoint sourceTopLeft = m_backdrop->mapFromGlobal(mapToGlobal(QPoint(0, 0)));
             const QPixmap source = m_backdrop->grab(
                 QRect(sourceTopLeft, size()));
             if (!source.isNull()) {
@@ -383,6 +384,13 @@ MainWindow::MainWindow(AppController *controller, QWidget *parent)
     buildToolRail();
     buildFloatingPanel();
     buildMapOverlays();
+    auto *scientific = new ScientificPanel(controller, m_canvas, this);
+    addDockWidget(Qt::RightDockWidgetArea, scientific);
+    scientific->hide();
+    auto *scientificAction = scientific->toggleViewAction();
+    scientificAction->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+    scientificAction->setToolTip(tr("变量切片 / 像元时序"));
+    m_toolRail->addAction(scientificAction);
 
     connect(m_controller, &AppController::canvasModeRequested,
             m_canvas, &MapCanvas::setCoordinateMode);
@@ -1310,6 +1318,7 @@ void MainWindow::showMultidimensionalImportDialog()
 
     auto *dialog = new QDialog(this);
     m_multidimensionalDialog = dialog;
+    dialog->setObjectName(QStringLiteral("scientificVariableDialog"));
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setWindowModality(Qt::WindowModal);
     dialog->setWindowTitle(tr("导入多维数据 — %1")
@@ -1324,11 +1333,12 @@ void MainWindow::showMultidimensionalImportDialog()
     layout->addWidget(summary);
     auto *form = new QFormLayout;
     auto *arrayCombo = new QComboBox(dialog);
+    arrayCombo->setObjectName(QStringLiteral("scientificVariableBox"));
     for (int index = 0; index < arrays.size(); ++index) {
         const QVariantMap array = arrays.at(index).toMap();
         arrayCombo->addItem(
             QStringLiteral("%1 · %2")
-                .arg(array.value(QStringLiteral("name")).toString(),
+                .arg(array.value(QStringLiteral("fullName")).toString(),
                      array.value(QStringLiteral("dataType")).toString()),
             index);
     }
@@ -1420,6 +1430,8 @@ void MainWindow::showMultidimensionalImportDialog()
     auto *buttons = new QDialogButtonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
     buttons->button(QDialogButtonBox::Ok)->setText(tr("导入"));
+    buttons->button(QDialogButtonBox::Ok)->setObjectName(QStringLiteral("scientificAdd"));
+    buttons->button(QDialogButtonBox::Cancel)->setObjectName(QStringLiteral("scientificCancel"));
     buttons->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
     connect(buttons, &QDialogButtonBox::accepted, dialog,
             [this, dialog, arrayCombo, xCombo, yCombo, coordinateMode,

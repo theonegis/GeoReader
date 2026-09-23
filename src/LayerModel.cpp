@@ -559,3 +559,14 @@ void LayerModel::advanceRevision()
     ++m_revision;
     emit revisionChanged();
 }
+
+void LayerModel::setScientificSource(const QString &id, const QString &source, const QString &slice) {
+    const int row = indexOfLayer(id);
+    if (row < 0 || m_layers[row].sourceUri == source) return;
+    m_layers[row].sourceUri = source;
+    m_layers[row].multidimensionalSlice = slice;
+    m_layers[row].name = m_layers[row].multidimensionalArray.section('/', -1) + QStringLiteral(" [") + slice + QStringLiteral("]");
+    emit dataChanged(index(row), index(row));
+    advanceRevision();
+    emit renderingChanged();
+}

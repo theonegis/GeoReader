@@ -1,3 +1,4 @@
+#include "ScientificData.h"
 #include "MultidimensionalDataset.h"
 #include "RasterRenderer.h"
 
@@ -109,11 +110,7 @@ int main(int argc, char **argv) {
     return 6;
   }
 
-  DatasetPtr reopened(static_cast<GDALDataset *>(
-                          GDALOpenEx(prepared.sourceUri.toUtf8().constData(),
-                                     GDAL_OF_RASTER | GDAL_OF_READONLY, nullptr,
-                                     nullptr, nullptr)),
-                      GDALClose);
+  auto reopened = ScientificData::open(prepared.sourceUri);
   if (!expect(reopened != nullptr,
               "Prepared VRT did not survive source handle closure") ||
       !expect(reopened->GetRasterCount() == 1,

@@ -1,3 +1,4 @@
+#include "ScientificData.h"
 #include "RasterRenderer.h"
 
 #include <QFileInfo>
@@ -145,6 +146,7 @@ std::shared_ptr<RasterViewportBuffer>
 readViewport(const LayerSnapshot &layer,
              const RasterRenderViewport &viewport, QString &error)
 {
+    std::lock_guard guard(ScientificData::ioMutex());
     const QVector<int> selectedBands =
         layer.rasterMode == QStringLiteral("single")
         ? QVector<int> {layer.grayBand}
@@ -155,12 +157,7 @@ readViewport(const LayerSnapshot &layer,
 
     const QString rasterSource =
         layer.sourceUri.isEmpty() ? layer.path : layer.sourceUri;
-    DatasetPtr source(
-        static_cast<GDALDataset *>(GDALOpenEx(
-            rasterSource.toUtf8().constData(),
-            GDAL_OF_RASTER | GDAL_OF_READONLY,
-            nullptr, nullptr, nullptr)),
-        GDALClose);
+    auto source = ScientificData::open(rasterSource);
     if (!source) {
         error = QStringLiteral("GDAL cannot open %1").arg(rasterSource);
         return {};
@@ -289,6 +286,10 @@ readViewport(const LayerSnapshot &layer,
                 buffer->alpha[index] = transparent ? 0.0F : 255.0F;
             }
         }
+        if (!ScientificData::decode(rasterSource).isEmpty()) {
+            const auto [scale, offset] = ScientificData::scaleOffset(rasterSource);
+            for (auto &sample : buffer->samples) sample = sample * scale + offset;
+        }
         insertBuffer(key, buffer);
         return buffer;
     }
@@ -377,6 +378,10 @@ readViewport(const LayerSnapshot &layer,
                 return {};
             }
         }
+    }
+    if (!ScientificData::decode(rasterSource).isEmpty()) {
+        const auto [scale, offset] = ScientificData::scaleOffset(rasterSource);
+        for (auto &sample : buffer->samples) sample = sample * scale + offset;
     }
     insertBuffer(key, buffer);
     return buffer;

@@ -1,3 +1,4 @@
+#include "ScientificData.h"
 #include "MultidimensionalDataset.h"
 
 #include <QCryptographicHash>
@@ -420,6 +421,7 @@ QVariantMap MultidimensionalScanResult::toVariantMap() const {
 
 MultidimensionalScanResult
 MultidimensionalDatasetInspector::scan(const QString &path) {
+  std::lock_guard guard(ScientificData::ioMutex());
   MultidimensionalScanResult result;
   result.path = path;
   CPLErrorReset();
@@ -545,7 +547,33 @@ QVariantMap MultidimensionalDatasetInspector::driverCapabilities() {
 PreparedMultidimensionalRaster
 MultidimensionalDatasetInspector::prepareRasterView(
     const MultidimensionalImportSpec &spec) {
+  std::lock_guard guard(ScientificData::ioMutex());
   PreparedMultidimensionalRaster result;
+  const auto catalog = ScientificData::catalog(spec.path);
+  for (const auto &item : catalog.value("variables").toList()) {
+    const auto variable = item.toMap();
+    if (variable.value("name").toString() != spec.arrayFullName) continue;
+    QVariantList indices;
+    for (const auto index : spec.sliceIndices) indices << QVariant::fromValue(index);
+    auto selection = variable;
+    selection["file"] = spec.path;
+    selection["array"] = spec.arrayFullName;
+    selection["indices"] = indices;
+    selection["x"] = spec.xDimension;
+    selection["y"] = spec.yDimension;
+    selection["crs"] = spec.crs;
+    if (selection.value("time").toInt() == spec.xDimension || selection.value("time").toInt() == spec.yDimension)
+      selection["time"] = -1;
+    const auto uri = ScientificData::encode(selection);
+    auto dataset = ScientificData::open(uri);
+    if (!dataset) { result.error = QStringLiteral("Cannot create selected array slice"); return result; }
+    double transform[6];
+    result.sourceUri = uri;
+    result.width = dataset->GetRasterXSize();
+    result.height = dataset->GetRasterYSize();
+    result.hasGeoreference = dataset->GetSpatialRef() && dataset->GetGeoTransform(transform) == CE_None;
+    return result;
+  }
   CPLErrorReset();
 
   const int classicDimensionCount = spec.dimensionSizes.size();

@@ -7,7 +7,7 @@ if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
         "Minimum macOS version supported by GeoReader")
 endif()
 
-project(GeoReader VERSION 3.0.0 LANGUAGES CXX)
+project(GeoReader VERSION 3.1.0 LANGUAGES CXX)
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
@@ -100,6 +100,9 @@ find_library(ICU_I18N_LIBRARY NAMES icui18n icuin
     PATH_SUFFIXES lib
 )
 
+if(APPLE AND NOT ICU_ROOT)
+    get_filename_component(ICU_ROOT "${ICU_INCLUDE_DIR}" DIRECTORY)
+endif()
 find_package(mapnik CONFIG QUIET)
 if(TARGET mapnik::mapnik)
     # Mapnik 4.x exports its GeoJSON and WKT implementations as separate
@@ -190,7 +193,7 @@ function(_georeader_resolve_mapnik_input_plugins output_files output_dir)
     foreach(_candidate_dir IN LISTS _georeader_mapnik_input_search_dirs)
         set(_candidate_files)
         set(_candidate_complete TRUE)
-        foreach(_plugin_name IN ITEMS geojson.input raster.input shape.input)
+        foreach(_plugin_name IN ITEMS geojson.input shape.input)
             if(EXISTS "${_candidate_dir}/${_plugin_name}")
                 list(APPEND _candidate_files
                     "${_candidate_dir}/${_plugin_name}")
@@ -244,6 +247,10 @@ qt_add_executable(GeoReader
     src/main.cpp
     src/MainWindow.cpp
     src/MainWindow.h
+    src/ScientificPanel.cpp
+    src/ScientificPanel.h
+    src/ScientificData.cpp
+    src/ScientificData.h
     src/AppController.cpp
     src/AppController.h
     src/AttributeTableModel.cpp
@@ -258,8 +265,35 @@ qt_add_executable(GeoReader
     src/RasterRenderer.h
 )
 
+set(GEOREADER_GDAL_PLUGIN_DIR "" CACHE PATH "Additional GDAL scientific plugins")
+if(GEOREADER_GDAL_PLUGIN_DIR)
+    file(GLOB _georeader_gdal_plugins "${GEOREADER_GDAL_PLUGIN_DIR}/gdal_*.dylib" "${GEOREADER_GDAL_PLUGIN_DIR}/gdal_*.so" "${GEOREADER_GDAL_PLUGIN_DIR}/gdal_*.dll")
+    if(APPLE)
+        set(_gdal_plugin_destination "$<TARGET_BUNDLE_DIR:GeoReader>/Contents/PlugIns/gdal")
+    else()
+        set(_gdal_plugin_destination "$<TARGET_FILE_DIR:GeoReader>/gdalplugins")
+    endif()
+    foreach(_plugin IN LISTS _georeader_gdal_plugins)
+        add_custom_command(TARGET GeoReader POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${_gdal_plugin_destination}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_plugin}" "${_gdal_plugin_destination}")
+    endforeach()
+endif()
+
 if(GEOREADER_BUILD_TESTS)
     enable_testing()
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+    target_sources(GeoReader PRIVATE tests/ScientificUiTests.cpp)
+    target_include_directories(GeoReader PRIVATE tests src)
+    target_link_libraries(GeoReader PRIVATE Qt6::Test)
+    target_compile_definitions(GeoReader PRIVATE GEOREADER_UI_TESTS GEOREADER_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+    qt_add_executable(GeoReaderScientificDataTests tests/ScientificDataTests.cpp src/ScientificData.cpp src/LayerModel.cpp)
+    target_include_directories(GeoReaderScientificDataTests PRIVATE src)
+    target_compile_definitions(GeoReaderScientificDataTests PRIVATE GEOREADER_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+    target_link_libraries(GeoReaderScientificDataTests PRIVATE Qt6::Core Qt6::Gui GDAL::GDAL)
+    add_test(NAME GeoReaderScientificDataTests COMMAND GeoReaderScientificDataTests)
+    add_test(NAME GeoReaderScientificUI COMMAND GeoReader --scientific-ui-test)
+    set_tests_properties(GeoReaderScientificUI PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
     qt_add_executable(GeoReaderModelTests
         tests/ModelTests.cpp
         src/AppController.cpp
@@ -301,8 +335,7 @@ if(GEOREADER_BUILD_TESTS)
     target_compile_definitions(GeoReaderInteractionTests PRIVATE
         GEOREADER_MAPNIK_INPUT_DIR="${MAPNIK_INPUT_PLUGIN_DIR}"
         GEOREADER_VERSION="${PROJECT_VERSION}"
-        QT_NO_CAST_FROM_ASCII
-    )
+        )
     target_link_libraries(GeoReaderInteractionTests PRIVATE
         Qt6::Core
         Qt6::Gui
@@ -335,11 +368,44 @@ if(GEOREADER_BUILD_TESTS)
              COMMAND GeoReaderMultidimensionalTests)
 endif()
 
+if(GEOREADER_BUILD_TESTS)
+    foreach(_test GeoReaderModelTests GeoReaderInteractionTests GeoReaderMultidimensionalTests)
+        target_sources(${_test} PRIVATE src/ScientificData.cpp)
+    endforeach()
+    foreach(_test GeoReaderModelTests GeoReaderInteractionTests GeoReaderMultidimensionalTests GeoReaderScientificDataTests)
+        set_tests_properties(${_test} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;GDAL_DRIVER_PATH=${GEOREADER_GDAL_PLUGIN_DIR}")
+    endforeach()
+endif()
+
 qt_add_translations(GeoReader
     TS_FILES translations/georeader_en.ts
     RESOURCE_PREFIX "/i18n"
     LUPDATE_OPTIONS -no-obsolete
 )
+
+# Runtime and shell icons share the same platform keyline and pixel sizes.
+if(APPLE)
+    set(_icon_platform macos)
+elseif(WIN32)
+    set(_icon_platform windows)
+else()
+    set(_icon_platform linux)
+endif()
+set(_icon_sizes 16 20 24 30 32 36 40 48 60 64 72 80 96 128 256 512 1024)
+set(_icon_files)
+foreach(_size IN LISTS _icon_sizes)
+    set(_icon_file "resources/icons/${_icon_platform}/${_size}.png")
+    set_source_files_properties("${_icon_file}" PROPERTIES QT_RESOURCE_ALIAS "${_size}.png")
+    list(APPEND _icon_files "${_icon_file}")
+endforeach()
+qt_add_resources(GeoReader "georeader_platform_icons" PREFIX "/icons" FILES ${_icon_files})
+
+option(GEOREADER_BUILD_ICON_TOOLS "Build the optional platform icon generator" OFF)
+if(GEOREADER_BUILD_ICON_TOOLS)
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Svg)
+    qt_add_executable(GeoReaderIconTool scripts/generate_icons.cpp)
+    target_link_libraries(GeoReaderIconTool PRIVATE Qt6::Core Qt6::Gui Qt6::Svg)
+endif()
 
 qt_add_resources(GeoReader "georeader_icons"
     PREFIX "/icons"
@@ -395,7 +461,6 @@ target_compile_definitions(GeoReader PRIVATE
     GEOREADER_MAPNIK_INPUT_DIR="${MAPNIK_INPUT_PLUGIN_DIR}"
     GEOREADER_MAPNIK_RUNTIME_INPUT_DIR="${GEOREADER_MAPNIK_RUNTIME_INPUT_DIR}"
     GEOREADER_VERSION="${PROJECT_VERSION}"
-    QT_NO_CAST_FROM_ASCII
 )
 target_link_libraries(GeoReader PRIVATE
     Qt6::Core
@@ -455,16 +520,15 @@ if(GEOREADER_BUNDLE_VCPKG_RUNTIME)
             "GEOREADER_VCPKG_RUNTIME_ROOT to be set.")
     endif()
 
-    if(WIN32)
-        install(DIRECTORY "${GEOREADER_VCPKG_RUNTIME_ROOT}/bin/"
-            DESTINATION "${CMAKE_INSTALL_BINDIR}"
-            FILES_MATCHING PATTERN "*.dll")
-    elseif(UNIX AND NOT APPLE)
-        install(DIRECTORY "${GEOREADER_VCPKG_RUNTIME_ROOT}/lib/"
-            DESTINATION "${CMAKE_INSTALL_LIBDIR}/georeader"
-            FILES_MATCHING
-                PATTERN "*.so"
-                PATTERN "*.so.*")
+    if(NOT APPLE)
+        get_target_property(_qt_core_library Qt6::Core IMPORTED_LOCATION_RELEASE)
+        if(NOT _qt_core_library)
+            get_target_property(_qt_core_library Qt6::Core IMPORTED_LOCATION)
+        endif()
+        get_filename_component(GEOREADER_QT_RUNTIME_DIR "${_qt_core_library}" DIRECTORY)
+        configure_file(cmake/InstallRuntimeClosure.cmake.in
+            "${CMAKE_CURRENT_BINARY_DIR}/InstallRuntimeClosure.cmake" @ONLY)
+        install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/InstallRuntimeClosure.cmake")
     endif()
 
     foreach(_data_directory IN ITEMS gdal proj)
@@ -490,6 +554,10 @@ if(UNIX AND NOT APPLE)
     install(FILES resources/icons/georeader.svg
         DESTINATION
             "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps")
+    foreach(_size IN LISTS _icon_sizes)
+        install(FILES "resources/icons/linux/${_size}.png"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/apps" RENAME georeader.png)
+    endforeach()
 endif()
 
 if(APPLE)
