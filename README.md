@@ -39,6 +39,6 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
 cmake --build build --parallel
 ```
 
-Windows 使用 Visual Studio 2022 C++ 工具链；也可使用仓库的 `vcpkg.json` 和 `cmake/triplets` 管理依赖。
-GDAL 必须启用 HDF4、HDF5 和 NetCDF 驱动；当前独立运行包已在 macOS arm64 验证，Windows/Linux 尚未完成同等验收。
+目标平台：macOS 15 Sequoia 及更新版本、Windows 10 x64（1809 及更新版本），以及 Fedora 43+ 和 Ubuntu 24.04 LTS+（x86-64 Linux）。Windows 使用 Visual Studio 2022 C++ 工具链；也可使用仓库的 `vcpkg.json` 和 `cmake/triplets` 管理依赖。
+GDAL 必须启用 HDF4、HDF5 和 NetCDF 驱动；这些是发行目标；不同 Linux 发行版及旧版 macOS 的安装包仍需按目标系统完成运行验收。
 完整依赖、打包和测试步骤见 [设计与工程说明](docs/DESIGN.md)。

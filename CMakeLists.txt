@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.25)
 
 if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
-    # Qt 6.8 官方支持 macOS 12；将工程默认值与发布 triplet 保持一致。
+    # 发布二进制最低支持 macOS Sequoia 15；将工程默认值与 vcpkg triplet 对齐。
     # 用户仍可在首次配置时显式传入其他 target 用于本地兼容性测试。
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING
         "Minimum macOS version supported by GeoReader")
 endif()
 
@@ -680,14 +680,15 @@ else()
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "GeoReader maintainers")
     set(CPACK_DEBIAN_PACKAGE_SECTION "science")
     string(CONCAT CPACK_DEBIAN_PACKAGE_DEPENDS
-        "libdbus-1-3, libwayland-client0, libwayland-cursor0, "
-        "libwayland-egl1, libxkbcommon0")
+        "libc6 (>= 2.39), libdbus-1-3, libwayland-client0, "
+        "libwayland-cursor0, libwayland-egl1, libxkbcommon0")
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)
     set(CPACK_RPM_PACKAGE_LICENSE "PolyForm-Noncommercial-1.0.0")
     set(CPACK_RPM_PACKAGE_GROUP "Applications/Engineering")
     set(CPACK_RPM_PACKAGE_REQUIRES
-        "dbus-libs, wayland-libs, libxkbcommon")
+        "glibc >= 2.39, dbus-libs, libwayland-client, libwayland-cursor, "
+        "libwayland-egl, libxkbcommon")
     set(CPACK_RPM_FILE_NAME RPM-DEFAULT)
 endif()
 

@@ -58,7 +58,7 @@ NetCDF 与 HDF5 可能共用非线程安全的 HDF5 库，因此读取操作使�
 - 非规则/曲线网格、缺少 CRS 的数组可按像素检查，本轮不实现非结构网格地图渲染。
 - 同一时刻显示一个选定像元的一条曲线，尚未实现多点对比、区域平均时序或数据编辑。
 - 单条曲线最多读取 100 万点；超过此限制会明确提示先创建数据子集。
-- Windows/Linux 的依赖配置可继续使用，但本轮未宣称其安装包已经通过真机测试。
+- 发行目标为 macOS 15 Sequoia 及更新、Windows 10 1809 及更新、Ubuntu 24.04 LTS+ 和 Fedora 43+（x86-64）；平台安装包须在对应系统完成实际验收。
 
 交互参考：[HDFView](https://support.hdfgroup.org/documentation/hdfview/latest/) 的变量路径、属性、切片和数值检查，
 以及 [Ncview](https://cirrus.ucsd.edu/ncview/) 的切片播放、色带和剖面浏览。

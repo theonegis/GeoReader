@@ -174,7 +174,7 @@ class ReleaseTripletTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
             self.assertIn("set(VCPKG_BUILD_TYPE release)", triplet)
 
-    def test_macos_triplets_target_monterey(self) -> None:
+    def test_macos_triplets_target_sequoia(self) -> None:
         for architecture in ("x64", "arm64"):
             triplet = (
                 PROJECT_ROOT
@@ -183,12 +183,12 @@ class ReleaseTripletTests(unittest.TestCase):
                 / f"{architecture}-osx-release.cmake"
             ).read_text(encoding="utf-8")
             self.assertIn(
-                "set(VCPKG_OSX_DEPLOYMENT_TARGET 12.0)", triplet
+                "set(VCPKG_OSX_DEPLOYMENT_TARGET 15.0)", triplet
             )
-            self.assertIn("-mmacosx-version-min=12.0", triplet)
+            self.assertIn("-mmacosx-version-min=15.0", triplet)
             self.assertIn("set(VCPKG_BUILD_TYPE release)", triplet)
 
-    def test_macos_workflow_builds_pinned_dependencies_for_monterey(
+    def test_macos_workflow_builds_pinned_dependencies_for_sequoia(
         self,
     ) -> None:
         workflow = (
@@ -201,9 +201,9 @@ class ReleaseTripletTests(unittest.TestCase):
         self.assertIn("version: ${{ env.QT_VERSION }}", macos_job)
         self.assertIn("arch: clang_64", macos_job)
         self.assertIn("Check out pinned vcpkg", macos_job)
-        self.assertIn("vcpkg-macos-12-${{ matrix.architecture }}", macos_job)
+        self.assertIn("vcpkg-macos-15-${{ matrix.architecture }}", macos_job)
         self.assertIn("--triplet=${{ matrix.triplet }}", macos_job)
-        self.assertIn("-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0", macos_job)
+        self.assertIn("-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0", macos_job)
         self.assertIn("-DGEOREADER_BUNDLE_VCPKG_RUNTIME=ON", macos_job)
         brew_step = macos_job.split("- name: Install build tools", 1)[1].split(
             "- name: Install Qt 6.8 LTS", 1
@@ -211,7 +211,7 @@ class ReleaseTripletTests(unittest.TestCase):
         for dependency in ("qt", "gdal", "mapnik"):
             self.assertNotIn(dependency, brew_step.lower())
 
-    def test_macos_bundle_declares_and_validates_monterey(self) -> None:
+    def test_macos_bundle_declares_and_validates_sequoia(self) -> None:
         cmake = (PROJECT_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
         plist = (
             PROJECT_ROOT / "packaging" / "macos" / "Info.plist.in"
@@ -220,13 +220,14 @@ class ReleaseTripletTests(unittest.TestCase):
             PROJECT_ROOT / "packaging" / "macos" / "package_dmg.sh"
         ).read_text(encoding="utf-8")
 
-        self.assertIn('CMAKE_OSX_DEPLOYMENT_TARGET "12.0"', cmake)
+        self.assertIn('CMAKE_OSX_DEPLOYMENT_TARGET "15.0"', cmake)
         self.assertIn("MACOSX_BUNDLE_INFO_PLIST", cmake)
         self.assertIn("GeoReader.app/Contents/Resources", cmake)
         self.assertIn("LSMinimumSystemVersion", plist)
         self.assertIn("${CMAKE_OSX_DEPLOYMENT_TARGET}", plist)
         bundler = (PROJECT_ROOT / "scripts" / "bundle_macos.py").read_text()
-        self.assertIn("GEOREADER_REQUIRE_MACOS12", bundler)
+        self.assertIn("minimum > (15, 0, 0)", bundler)
+        self.assertIn("minimumMacOS", bundler)
         self.assertIn("LC_BUILD_VERSION", bundler)
         self.assertIn("LSMinimumSystemVersion", bundler)
         self.assertIn("audit_macos_bundle.py", package_script)
@@ -246,6 +247,28 @@ class ReleaseTripletTests(unittest.TestCase):
         )
         self.assertNotIn("./scripts/build.sh --type Debug", workflow)
         self.assertNotIn(r".\scripts\build.ps1 -Type Debug", workflow)
+
+    def test_linux_packages_declare_supported_glibc_baseline(self) -> None:
+        cmake = (PROJECT_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn("libc6 (>= 2.39)", cmake)
+        self.assertIn("glibc >= 2.39", cmake)
+        readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Fedora 43+", readme)
+        self.assertIn("Ubuntu 24.04 LTS+", readme)
+        self.assertIn("Windows 10 x64", readme)
+        workflow = (
+            PROJECT_ROOT / ".github" / "workflows" / "package.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Verify the RPM on Fedora 43", workflow)
+        self.assertIn("fedora:43", workflow)
+
+    def test_windows_package_checks_bundled_scientific_drivers(self) -> None:
+        workflow = (
+            PROJECT_ROOT / ".github" / "workflows" / "package.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("Install and verify the Windows 10 runtime package", workflow)
+        self.assertIn("Windows installer", workflow)
+        self.assertIn("scientific.hdf", workflow)
 
     def test_linux_triplet_explicitly_targets_linux(self) -> None:
         triplet = (

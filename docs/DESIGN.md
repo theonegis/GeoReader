@@ -63,7 +63,7 @@
   快捷键持久化
 - 工具栏采用 Heroicons 24 px outline 图标；APP Icon 使用蓝紫渐变的
   小圆角三图层设计，并提供 macOS `.icns`、Windows `.ico` 和 Linux SVG
-- macOS Intel 与 Apple Silicon 安装包最低支持 macOS Monterey 12
+- macOS Intel 与 Apple Silicon 安装包最低支持 macOS Sequoia 15
 - macOS、Windows 与 Linux 统一使用 Qlementine `v1.4.2` 原生
   `QStyle`，支持跟随系统、浅色和深色主题即时切换
 - Linux 原生支持 Wayland，并保留 X11/XWayland 回退；Wayland 会话中默认
@@ -282,9 +282,10 @@ bash packaging/macos/package_dmg.sh build-release/GeoReader.app arm64 dist/relea
 
 打包流程会审计依赖、执行驱动自检、验证签名和 DMG；保留主分支已有的磁盘映像创建重试。测试包可显式添加 `--test-runtime`，只用于隔离交互验证，不作为正式安装包。
 
-Windows/Linux 使用 CMake `GET_RUNTIME_DEPENDENCIES` 收集实际导入的 vcpkg 库，取代整目录打包。Qt 的部署流程负责平台和输入法插件。三类科学格式必须通过 `--runtime-check`；这两个平台的安装包尚待各自 CI/真机验证，CI 在部署前构建精简 GDAL（内置 HDF4），仅替换当前仓库私有 vcpkg 目录中的同 ABI 运行库；不会修改系统安装。
+Windows 10 x64（1809 及更新版本）使用 MSVC 2022 构建。
+Ubuntu 24.04 LTS 及更新版本与 Fedora 43 及更新版本提供 x86-64 Linux 包；Linux 发行版包要求 glibc 2.39 或更新，并依赖系统提供 Qt 图形后端所需 Wayland/DBus 库。Windows/Linux 使用 CMake `GET_RUNTIME_DEPENDENCIES` 收集实际导入的 vcpkg 库，取代整目录打包。Qt 的部署流程负责平台和输入法插件。三类科学格式必须通过 `--runtime-check`；这两个平台的安装包尚待各自 CI/真机验证，CI 在部署前构建精简 GDAL（内置 HDF4），仅替换当前仓库私有 vcpkg 目录中的同 ABI 运行库；不会修改系统安装。
 
-本地 Homebrew 二进制的最低系统要求是 macOS 27.0，当前本地包据实写入此要求。CI 使用 macOS 12 triplet 和 Qt 6.8，并设置 `GEOREADER_REQUIRE_MACOS12=1`：任何库要求更新系统都会阻止打包，不能只改 Info.plist 冒充兼容。
+发布目标最低 macOS 15.0。CI 使用 macOS 15 triplet 和 Qt 6.8，并强制检查 APP 中每个二进制的系统版本，任一库要求更新版本都会阻止发行，不能只改 Info.plist 声称兼容。当前开发机的 Homebrew 二进制要求 macOS 27，因此不能用来制作 macOS 15 发行包；需要使用 CI 的 vcpkg macOS 15 依赖组。
 
 ## 维护与发布
 

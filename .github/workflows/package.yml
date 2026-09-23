@@ -152,7 +152,7 @@ jobs:
         with:
           path: vcpkg_installed
           key: >-
-            vcpkg-macos-12-${{ matrix.architecture }}-${{
+            vcpkg-macos-15-${{ matrix.architecture }}-${{
             env.VCPKG_COMMIT }}-mapnik-${{ env.MAPNIK_VERSION }}-${{
             hashFiles('vcpkg.json', 'scripts/prepare_vcpkg_overlay.py',
             'cmake/triplets/*-osx-release.cmake') }}
@@ -166,7 +166,7 @@ jobs:
           --vcpkg-root .vcpkg
           --output .vcpkg-overlays
 
-      - name: Install macOS 12 GDAL and Mapnik dependencies
+      - name: Install macOS 15 GDAL and Mapnik dependencies
         run: |
           installed="$GITHUB_WORKSPACE/vcpkg_installed"
           ./.vcpkg/vcpkg install \
@@ -187,12 +187,11 @@ jobs:
         run: |
           installed="$GITHUB_WORKSPACE/vcpkg_installed"
           export GEOREADER_VCPKG_RUNTIME_ROOT="$installed/${{ matrix.triplet }}"
-          python3 scripts/build_minimal_gdal.py --deployment-target 12.0
+          python3 scripts/build_minimal_gdal.py --deployment-target 15.0
           export GEOREADER_GDAL_PREFIX="$PWD/.test-deps/gdal-minimal"
-          export GEOREADER_REQUIRE_MACOS12=1
           ./scripts/build.sh --type Release --clean-first --package --package-format dmg -- \
             -DCMAKE_OSX_ARCHITECTURES=${{ matrix.architecture }} \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
             -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/.vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_INSTALLED_DIR="$installed" \
             -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
@@ -321,6 +320,26 @@ jobs:
               "-DGEOREADER_BUNDLE_VCPKG_RUNTIME=ON"
               "-DGEOREADER_VCPKG_RUNTIME_ROOT=$installed/x64-windows-release"
             )
+
+      - name: Install and verify the Windows 10 runtime package
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem dist -Filter '*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Windows installer not found.' }
+          $installDir = "$env:RUNNER_TEMP/GeoReader"
+          $setup = Start-Process -FilePath $installer.FullName `
+            -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
+          $app = Join-Path $installDir 'bin/GeoReader.exe'
+          if (-not (Test-Path $app)) { $app = Join-Path $installDir 'GeoReader.exe' }
+          if (-not (Test-Path $app)) { throw 'Installed GeoReader.exe not found.' }
+          $check = Start-Process -FilePath $app -ArgumentList @(
+            '--runtime-check',
+            "$env:GITHUB_WORKSPACE/tests/data/netcdf4.nc",
+            "$env:GITHUB_WORKSPACE/tests/data/scientific.h5",
+            "$env:GITHUB_WORKSPACE/tests/data/scientific.hdf"
+          ) -Wait -PassThru
+          if ($check.ExitCode -ne 0) { throw "Bundled drivers/data check failed: $($check.ExitCode)" }
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v6
@@ -594,6 +613,22 @@ jobs:
           QT_QUICK_BACKEND=software \
             "$executable" \
             --smoke-test "$GITHUB_WORKSPACE/tests/data/demo.geojson"
+
+      - name: Verify the RPM on Fedora 43
+        run: |
+          rpm_package="$(find dist -maxdepth 1 -name '*.rpm' -print -quit)"
+          test -n "$rpm_package"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace:ro" \
+            -v "$GITHUB_WORKSPACE/dist:/packages:ro" \
+            fedora:43 \
+            bash -euxc '
+              dnf install -y /packages/*.rpm
+              QT_QPA_PLATFORM=offscreen /usr/bin/GeoReader --runtime-check \
+                /workspace/tests/data/netcdf4.nc \
+                /workspace/tests/data/scientific.h5 \
+                /workspace/tests/data/scientific.hdf
+            '
 
       - name: Upload Linux packages
         if: always()

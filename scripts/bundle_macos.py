@@ -149,12 +149,12 @@ def bundle(source_app, destination, test_runtime=False, search_roots=()):
         shutil.copy2(proj_prefix / 'share/proj' / name, resources / 'proj' / name)
     if not test_runtime and any('QtTest.framework' in str(p) for p in selected.values()):
         raise RuntimeError('Release packaging requires GEOREADER_BUILD_TESTS=OFF')
-    # Do not advertise macOS 12 if a local developer library was built for a
-    # newer OS. The CI's macOS-12 libraries keep the older deployment target.
+    # Do not advertise macOS 15 if a local developer library was built for a
+    # newer OS. The release triplets compile all dependencies for macOS 15.
     import plistlib
     plist_path = contents / 'Info.plist'
     plist = plistlib.loads(plist_path.read_bytes())
-    minimum = tuple(map(int, plist.get('LSMinimumSystemVersion', '12.0').split('.')))
+    minimum = tuple(map(int, plist.get('LSMinimumSystemVersion', '15.0').split('.')))
     for target in selected.values():
         commands = run('otool', '-l', str(target))
         for block in commands.split('Load command'):
@@ -163,8 +163,8 @@ def bundle(source_app, destination, test_runtime=False, search_roots=()):
             match = re.search(r'\b(?:minos|version) (\d+\.\d+(?:\.\d+)?)', block)
             if match:
                 minimum = max(minimum, tuple(map(int, match[1].split('.'))))
-    if os.environ.get('GEOREADER_REQUIRE_MACOS12') == '1' and minimum > (12, 0, 0):
-        raise RuntimeError('A runtime library requires newer than macOS 12: '+str(minimum))
+    if minimum > (15, 0, 0):
+        raise RuntimeError('A runtime library requires newer than macOS 15: '+str(minimum))
     plist['LSMinimumSystemVersion'] = '.'.join(map(str, minimum))
     plist_path.write_bytes(plistlib.dumps(plist))
     (resources / 'qt.conf').write_text('[Paths]\nPlugins = PlugIns\n')
