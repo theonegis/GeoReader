@@ -2,6 +2,7 @@
 #include "RasterRenderer.h"
 
 #include <QCursor>
+#include <QDateTime>
 #include <QDebug>
 #include <QFileInfo>
 #include <QFontMetrics>
@@ -17,8 +18,10 @@
 #include <QPinchGesture>
 #include <QResizeEvent>
 #include <QStandardPaths>
+#include <QStringList>
 #include <QThread>
 #include <QWheelEvent>
+#include <QVector>
 #include <QtConcurrent>
 
 #include <gdal_priv.h>
@@ -46,6 +49,19 @@ namespace {
 constexpr double kMaxLatitude = 85.05112878;
 constexpr double kEarthRadius = 6378137.0;
 constexpr int kTileSize = 256;
+
+// 内存瓦片缓存上限。超过后按“最久未使用”逐个淘汰，且永不淘汰当前视口
+// 正在使用的瓦片：整批清空会让整幅底图在没有任何新操作时突然变空。
+constexpr int kMaximumCachedTiles = 512;
+// 单个瓦片请求的最长等待时间。这里不设并发请求上限：实测在慢速/抖动网络
+// 下，“限制并发”会把少量卡住的请求放大成整个视口都发不出请求。该值取得
+// 足够宽松以免误杀正常慢请求，只用于释放真正卡死的请求，避免它长期占用
+// pending 名额、使对应瓦片再也无法重新请求。
+constexpr int kTileTransferTimeoutMs = 45000;
+// 失败重试次数与退避间隔（毫秒）。离开视口的瓦片会清空计数，因此这里
+// 限制的是“同一张瓦片连续失败”的次数，而不是它整个会话的失败次数。
+constexpr int kMaximumTileRetries = 3;
+constexpr std::array<int, kMaximumTileRetries> kTileRetryBackoffMs {500, 1500, 4000};
 
 int maximumTileZoom(const QString &baseMap)
 {
@@ -539,10 +555,18 @@ void MapCanvas::setBaseMap(const QString &baseMap)
         return;
 
     m_baseMap = normalized;
+    // 与旧底图相关的状态全部作废：内存瓦片、LRU 时间戳、失败重试计数都只对
+    // 上一张底图有意义，留着会干扰新底图。瓦片 key 里带有底图名，所以在途的
+    // 旧请求即使稍后返回也只会落到旧 key 上，不会画进新底图。
+    m_pendingTiles.clear();
+    m_tileRetryCount.clear();
+    m_tileRetryAfterMs.clear();
+    m_visibleTileKeys.clear();
     {
         QMutexLocker locker(&m_imageMutex);
         m_tiles.clear();
     }
+    m_tileStamps.clear();
     emit baseMapChanged();
     update();
 }
@@ -737,6 +761,7 @@ void MapCanvas::drawBaseMap(QPainter *painter)
     const int tileCount = 1 << tileZoom;
 
     painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
+    m_visibleTileKeys.clear();
     for (int tileY = minTileY; tileY <= maxTileY; ++tileY) {
         if (tileY < 0 || tileY >= tileCount)
             continue;
@@ -750,11 +775,25 @@ void MapCanvas::drawBaseMap(QPainter *painter)
                 (tileY * kTileSize - topLeftAtTileZoom.y()) * fractionalScale,
                 kTileSize * fractionalScale + 0.5,
                 kTileSize * fractionalScale + 0.5);
-            if (const auto it = m_tiles.constFind(key); it != m_tiles.cend())
+            m_visibleTileKeys.insert(key);
+            if (const auto it = m_tiles.constFind(key); it != m_tiles.cend()) {
+                m_tileStamps.insert(key, ++m_tileClock);
                 painter->drawImage(target, *it);
-            else {
+            } else {
                 painter->fillRect(target, QColor(QStringLiteral("#E8EDF2")));
                 requestTile(tileZoom, wrappedX, tileY, key);
+            }
+        }
+    }
+    // 已经离开视口的瓦片，其“连续失败次数”在这里清零。这样一张瓦片过去
+    // 因为网络抖动失败过，并不会让它以后再进入该区域时被永久拉黑。
+    if (!m_tileRetryCount.isEmpty()) {
+        for (auto it = m_tileRetryCount.begin(); it != m_tileRetryCount.end();) {
+            if (!m_visibleTileKeys.contains(it.key())) {
+                m_tileRetryAfterMs.remove(it.key());
+                it = m_tileRetryCount.erase(it);
+            } else {
+                ++it;
             }
         }
     }
@@ -771,6 +810,12 @@ void MapCanvas::requestTile(int zoom, int x, int y, const QString &key)
     }
     if (m_pendingTiles.contains(key))
         return;
+    // 重试次数用尽的瓦片不再发起请求，避免对同一张不可用的瓦片无限重试。
+    if (m_tileRetryCount.value(key) > kMaximumTileRetries)
+        return;
+    // 退避冷却未到期的瓦片跳过本轮，等计时到点后重绘时再补请求。
+    if (QDateTime::currentMSecsSinceEpoch() < m_tileRetryAfterMs.value(key))
+        return;
     m_pendingTiles.insert(key);
     const QUrl url = tileUrl(m_baseMap, zoom, x, y);
     QNetworkRequest request(url);
@@ -782,6 +827,9 @@ void MapCanvas::requestTile(int zoom, int x, int y, const QString &key)
                          QNetworkRequest::PreferCache);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::NoLessSafeRedirectPolicy);
+    // 没有超时的请求一旦卡死，会长期占用 pending 名额，使这张瓦片再也
+    // 无法重新请求。
+    request.setTransferTimeout(kTileTransferTimeoutMs);
     QNetworkReply *reply = m_network.get(request);
     reply->setProperty("tileKey", key);
 }
@@ -790,17 +838,120 @@ void MapCanvas::tileFinished(QNetworkReply *reply)
 {
     const QString key = reply->property("tileKey").toString();
     m_pendingTiles.remove(key);
+
+    // 瓦片最终拿不到时的收尾：只有它仍在当前视口内才做有限次数的退避重试；
+    // 已经离开视口的清掉计数，等用户回到该区域时重新开始。
+    const auto handleUnavailable = [this, &key] {
+        if (!m_visibleTileKeys.contains(key)) {
+            m_tileRetryCount.remove(key);
+            m_tileRetryAfterMs.remove(key);
+            update();
+            return;
+        }
+        const int attempts = m_tileRetryCount.value(key) + 1;
+        m_tileRetryCount.insert(key, attempts);
+        if (attempts <= kMaximumTileRetries) {
+            const int backoff = kTileRetryBackoffMs.at(attempts - 1);
+            m_tileRetryAfterMs.insert(
+                key, QDateTime::currentMSecsSinceEpoch() + backoff);
+            scheduleTileRetry(key, backoff);
+        } else {
+            qWarning().noquote()
+                << "Basemap tile unavailable after" << kMaximumTileRetries
+                << "retries:" << key;
+        }
+        update();
+    };
+
     if (reply->error() == QNetworkReply::NoError) {
         QImage image;
-        if (image.loadFromData(reply->readAll())) {
+        const QByteArray payload = reply->readAll();
+        const bool decoded = image.loadFromData(payload);
+        if (decoded) {
             QMutexLocker locker(&m_imageMutex);
-            if (m_tiles.size() > 512)
-                m_tiles.clear();
             m_tiles.insert(key, std::move(image));
+            m_tileStamps.insert(key, ++m_tileClock);
+            m_tileRetryCount.remove(key);
+            m_tileRetryAfterMs.remove(key);
+            trimTileCache();
             update();
         }
+        // HTTP 200 但不是有效图片（错误页、被截断的响应等）按不可用处理。
+        if (!decoded)
+            handleUnavailable();
+    } else {
+        handleUnavailable();
     }
     reply->deleteLater();
+}
+
+void MapCanvas::trimTileCache()
+{
+    if (m_tiles.size() <= kMaximumCachedTiles)
+        return;
+    // 按“最近使用时间”从旧到新淘汰，并且只淘汰当前视口之外的瓦片，
+    // 因此屏幕上的画面不会因为到达上限而整体消失。
+    QVector<QString> candidates;
+    candidates.reserve(m_tiles.size());
+    for (auto it = m_tiles.cbegin(); it != m_tiles.cend(); ++it) {
+        if (!m_visibleTileKeys.contains(it.key()))
+            candidates.append(it.key());
+    }
+    std::sort(candidates.begin(), candidates.end(),
+              [this](const QString &left, const QString &right) {
+        return m_tileStamps.value(left) < m_tileStamps.value(right);
+    });
+    for (const QString &key : candidates) {
+        if (m_tiles.size() <= kMaximumCachedTiles)
+            break;
+        m_tiles.remove(key);
+        m_tileStamps.remove(key);
+    }
+}
+
+void MapCanvas::scheduleTileRetry(const QString &key, int delayMs)
+{
+    // 每张瓦片各自安排一个 single-shot 定时器：到点后只为这张瓦片重绘一次。
+    // 不能用“所有失败瓦片共用一个 QTimer”——后一次 start() 会覆盖前一次的
+    // 计时，退避时间较长、先安排的那张瓦片就会永远等不到唤醒，一直停在灰白
+    // 占位块上。绑定 this 作为 context，窗口销毁时定时器自动失效。
+    //
+    // 必须用 PreciseTimer：默认的 CoarseTimer 允许 ±5% 误差，4000ms 的退避
+    // 可能提前将近 200ms 触发，那会让 retryTile() 里的“退避未到”检查把这次
+    // 唤醒悄悄丢掉。
+    QTimer::singleShot(std::max(0, delayMs), Qt::PreciseTimer, this,
+                       [this, key] { retryTile(key); });
+}
+
+void MapCanvas::retryTile(const QString &key)
+{
+    // 退避到点后的唤醒。只有下面这些情况才放弃这次唤醒：
+    // 1) 这张瓦片已经不在重试表里（离开视口或切换底图会清掉它）；
+    // 2) 它已经不在当前视口内；
+    // 3) 它已有在途请求（该请求失败时会自己重新安排，不会丢）；
+    // 4) 它已经成功加载进内存缓存。
+    //
+    // 特别注意“比预定时间早醒来”这一种情况：不能直接返回，那会让这张瓦片
+    // 再也没人唤醒、永远停在灰白占位块上。这里改为把定时器重新排到剩余时间
+    // 之后，保证“只要安排过重试的可见瓦片，最终一定会被唤醒”。
+    if (!m_tileRetryCount.contains(key))
+        return;
+    if (!m_visibleTileKeys.contains(key))
+        return;
+    if (m_pendingTiles.contains(key))
+        return;
+    if (m_tiles.contains(key))
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 dueAt = m_tileRetryAfterMs.value(key);
+    if (now < dueAt) {
+        // 定时器因计时精度提前触发：重新排到剩余时间之后，绝不静默丢弃。
+        scheduleTileRetry(key, static_cast<int>(dueAt - now));
+        return;
+    }
+    // 清掉冷却时间，让随后 drawBaseMap() 里的 requestTile() 立即重新请求。
+    m_tileRetryAfterMs.remove(key);
+    update();
 }
 
 void MapCanvas::zoomBy(double delta)
