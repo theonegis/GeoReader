@@ -1988,11 +1988,18 @@ void MainWindow::showMetadata(int row)
                 new QTreeWidgetItem(tree, {section, QString()}));
             sections.value(section)->setExpanded(true);
         }
+        const QString value =
+            entry.value(QStringLiteral("value")).toString();
         auto *item = new QTreeWidgetItem(
             sections.value(section),
-            {entry.value(QStringLiteral("name")).toString(),
-             entry.value(QStringLiteral("value")).toString()});
-        item->setToolTip(1, item->text(1));
+            {entry.value(QStringLiteral("name")).toString(), value});
+        item->setToolTip(1, value);
+        const int lineCount = value.count(u'\n') + 1;
+        if (lineCount > 1) {
+            const int height =
+                tree->fontMetrics().lineSpacing() * lineCount + 8;
+            item->setSizeHint(1, QSize(0, height));
+        }
     }
     tree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     tree->header()->setSectionResizeMode(1, QHeaderView::Stretch);

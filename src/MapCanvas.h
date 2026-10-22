@@ -120,12 +120,20 @@ private:
     void drawSelectedFeature(QPainter *painter) const;
     void requestTile(int zoom, int x, int y, const QString &key);
     void tileFinished(QNetworkReply *reply);
+    void trimTileCache();
+    void scheduleTileRetry(const QString &key, int delayMs);
+    void retryTile(const QString &key);
     void setRendering(bool rendering);
 
     LayerModel *m_layerModel = nullptr;
     QNetworkAccessManager m_network;
     QHash<QString, QImage> m_tiles;
+    QHash<QString, quint64> m_tileStamps;
+    QHash<QString, int> m_tileRetryCount;
+    QHash<QString, qint64> m_tileRetryAfterMs;
     QSet<QString> m_pendingTiles;
+    QSet<QString> m_visibleTileKeys;
+    quint64 m_tileClock = 0;
     QTimer m_renderTimer;
     QFutureWatcher<RenderResult> m_renderWatcher;
     QImage m_overlay;
