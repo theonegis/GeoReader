@@ -1,5 +1,6 @@
 #include "MapCanvas.h"
 #include "RasterRenderer.h"
+#include "UiTypography.h"
 
 #include <QCursor>
 #include <QDateTime>
@@ -698,8 +699,7 @@ void MapCanvas::paintEvent(QPaintEvent *event)
     }
 
     painter->save();
-    QFont attributionFont = painter->font();
-    attributionFont.setPixelSize(10);
+    const QFont attributionFont = UiTypography::dataFont();
     painter->setFont(attributionFont);
     const QString attribution = baseMapAttribution();
     if (attribution.isEmpty()) {

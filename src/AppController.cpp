@@ -10,6 +10,7 @@
 #include <QLocale>
 #include <QPointer>
 #include <QSettings>
+#include <QScopedValueRollback>
 #include <QStandardPaths>
 #include <QStringList>
 #include <QTimer>
@@ -400,6 +401,34 @@ void AppController::loadFiles(const QStringList &paths)
         loadDataset(QFileInfo(path).absoluteFilePath());
 }
 
+bool AppController::ensureCoordinateContext(const QString &mode,
+                                             const QString &path)
+{
+    if (m_coordinateConfirmationActive)
+        return false;
+    if (m_layerModel.count() == 0)
+        return true;
+    const auto existingLayers = m_layerModel.snapshots();
+    const bool needsReset = mode == QStringLiteral("pixel")
+        || std::any_of(existingLayers.cbegin(), existingLayers.cend(),
+                       [](const LayerSnapshot &layer) {
+            return layer.coordinateMode == QStringLiteral("pixel");
+        });
+    if (!needsReset)
+        return true;
+    QScopedValueRollback confirming(m_coordinateConfirmationActive, true);
+    if (!m_coordinateResetConfirmation ||
+        !m_coordinateResetConfirmation(QFileInfo(path).fileName(), mode,
+                                       m_layerModel.count())) {
+        setStatus(tr("已取消加载 %1；原有图层保持不变")
+                      .arg(QFileInfo(path).fileName()));
+        return false;
+    }
+    m_attributeTableModel.clear();
+    m_layerModel.clear();
+    return true;
+}
+
 void AppController::setFontFamily(const QString &family)
 {
     if (family.isEmpty() || family == m_fontFamily)
@@ -593,7 +622,10 @@ void AppController::addVectorLayers(const QString &path,
         if (!extentToWgs84(extent, ogrLayer->GetSpatialRef(),
                            layer.minLon, layer.minLat, layer.maxLon, layer.maxLat))
             continue;
+        if (!ensureCoordinateContext(QStringLiteral("geographic"), path))
+            return;
         m_layerModel.addLayer(layer);
+        emit canvasModeRequested(QStringLiteral("geographic"), 0, 0);
         emit layerAdded(layer.minLon, layer.minLat, layer.maxLon, layer.maxLat);
         ++added;
     }
@@ -609,22 +641,22 @@ void AppController::addRasterLayer(const QString &path,
                                    const QString &arrayFullName,
                                    const QString &sliceDescription)
 {
-    std::lock_guard guard(ScientificData::ioMutex());
+    std::unique_lock guard(ScientificData::ioMutex());
     const QString rasterSource = sourceUri.isEmpty() ? path : sourceUri;
     auto dataset = ScientificData::open(rasterSource);
     if (!dataset)
         return;
 
     double transform[6] {};
-    const bool hasTransform = dataset->GetGeoTransform(transform) == CE_None;
+    const bool hasTransform = dataset->GetGeoTransform(transform) == CE_None
+        && std::all_of(std::begin(transform), std::end(transform),
+                       [](double value) { return std::isfinite(value); })
+        && std::abs(transform[1] * transform[5] - transform[2] * transform[4])
+               > std::numeric_limits<double>::min();
+    const auto *reference = dataset->GetSpatialRef();
+    const bool hasReference = reference && !reference->IsEmpty();
     const bool pixelMode = coordinateMode == QStringLiteral("pixel")
-                           || (coordinateMode == QStringLiteral("auto")
-                               && (!hasTransform
-                                   || dataset->GetSpatialRef() == nullptr));
-    if (!hasTransform && !pixelMode) {
-        setStatus(tr("栅格缺少有效的地理参考：%1").arg(QFileInfo(path).fileName()));
-        return;
-    }
+                           || !hasTransform || !hasReference;
 
     const double width = dataset->GetRasterXSize();
     const double height = dataset->GetRasterYSize();
@@ -704,6 +736,12 @@ void AppController::addRasterLayer(const QString &path,
         }
     }
 
+    // Finish validating the new raster before any destructive scene change.
+    // Never hold the scientific I/O lock across a modal confirmation loop.
+    dataset.reset();
+    guard.unlock();
+    if (!ensureCoordinateContext(layer.coordinateMode, path))
+        return;
     m_layerModel.addLayer(layer);
     emit canvasModeRequested(layer.coordinateMode,
                              layer.pixelWidth, layer.pixelHeight);

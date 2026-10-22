@@ -6,6 +6,8 @@
 
 #include <QObject>
 #include <QVariantList>
+#include <functional>
+#include <utility>
 
 class AppController final : public QObject
 {
@@ -60,6 +62,12 @@ public:
 
     Q_INVOKABLE void openFiles();
     void loadFiles(const QStringList &paths);
+    using CoordinateResetConfirmation =
+        std::function<bool(const QString &, const QString &, int)>;
+    void setCoordinateResetConfirmation(CoordinateResetConfirmation confirmation)
+    {
+        m_coordinateResetConfirmation = std::move(confirmation);
+    }
     Q_INVOKABLE void setFontFamily(const QString &family);
     Q_INVOKABLE void setFontSize(int size);
     Q_INVOKABLE void setQtStyle(const QString &style);
@@ -102,6 +110,7 @@ private:
                         const QString &arrayFullName = {},
                         const QString &sliceDescription = {});
     void setStatus(const QString &message);
+    bool ensureCoordinateContext(const QString &mode, const QString &path);
 
     LayerModel m_layerModel;
     AttributeTableModel m_attributeTableModel;
@@ -113,4 +122,6 @@ private:
     QString m_statusMessage;
     MultidimensionalScanResult m_pendingMultidimensionalImport;
     bool m_multidimensionalImportBusy = false;
+    CoordinateResetConfirmation m_coordinateResetConfirmation;
+    bool m_coordinateConfirmationActive = false;
 };

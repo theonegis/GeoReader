@@ -128,6 +128,7 @@ public:
     Q_INVOKABLE bool moveDataset(const QString &datasetId,
                                  const QString &targetDatasetId);
     Q_INVOKABLE void removeLayer(int row);
+    void clear();
     Q_INVOKABLE void removeDataset(const QString &datasetId);
     Q_INVOKABLE void setDatasetVisible(const QString &datasetId, bool visible);
 

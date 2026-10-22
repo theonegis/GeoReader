@@ -7,6 +7,7 @@
 
 class AppController;
 class MapCanvas;
+class ScientificPanel;
 class QAction;
 class QCheckBox;
 class QComboBox;
@@ -35,7 +36,7 @@ class MainWindow final : public QMainWindow
     Q_OBJECT
 
 public:
-    enum class Panel { None, Layers, Raster, Vector, Settings };
+    enum class Panel { None, Layers, Raster, Vector, Settings, Scientific };
 
     explicit MainWindow(AppController *controller, QWidget *parent = nullptr);
 
@@ -75,6 +76,7 @@ private:
     void updateCoordinates();
     void fitSelectedLayer();
     void removeSelectedLayer();
+    void removeLayer(int row);
     void moveSelectedLayer(int offset);
     void moveLayer(int from, int to);
     static int remappedIndex(int current, int from, int to);
@@ -107,6 +109,8 @@ private:
     QToolButton *m_rasterButton = nullptr;
     QToolButton *m_vectorButton = nullptr;
     QToolButton *m_settingsButton = nullptr;
+    QToolButton *m_scientificButton = nullptr;
+    ScientificPanel *m_scientificPanel = nullptr;
     QFrame *m_panelFrame = nullptr;
     QLabel *m_panelTitle = nullptr;
     QLabel *m_panelSubtitle = nullptr;

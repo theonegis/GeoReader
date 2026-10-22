@@ -469,6 +469,8 @@ QVariantMap series(const QString &path, double x, double y, bool geographic,
   }
   if (td < 0)
     return {{"cells", cells},
+            {"scale", calibration(a.array).first},
+            {"offset", calibration(a.array).second},
             {"pixel", QString("%1, %2").arg(int(x)).arg(int(y))},
             {"unit", QString::fromStdString(a.array->GetUnit())},
             {"variable", s.value("array")},
@@ -513,6 +515,7 @@ QVariantMap series(const QString &path, double x, double y, bool geographic,
   size_t good = 0;
   for (size_t i = 0; i < n; ++i) {
     bool ok = std::isfinite(values[i]) && !(hasND && values[i] == nd);
+    const QVariant raw = ok ? QVariant(values[i]) : QVariant();
     double v = values[i] * scale + offset;
     ok = ok && std::isfinite(v);
     if (ok)
@@ -520,9 +523,15 @@ QVariantMap series(const QString &path, double x, double y, bool geographic,
     points.push_back(
         QVariantMap{{"x", std::isfinite(times[i]) ? times[i] : double(i)},
                     {"label", timeLabel(times[i], units, calendar)},
+                    {"index", qulonglong(i)},
+                    {"column", profile == "row" ? int(i) : int(x)},
+                    {"row", profile == "column" ? int(i) : int(y)},
+                    {"raw", raw},
                     {"value", ok ? QVariant(v) : QVariant()}});
   }
   return {{"points", points},
+          {"scale", scale},
+          {"offset", offset},
           {"pixel", QString("%1, %2").arg(int(x)).arg(int(y))},
           {"cells", cells},
           {"profile", profile},

@@ -5,6 +5,8 @@
 #include <QApplication>
 #include <QFileInfo>
 #include <QTemporaryDir>
+#include <QEventLoop>
+#include <QTimer>
 
 #include <gdal.h>
 #include <ogrsf_frmts.h>
@@ -58,6 +60,28 @@ bool createMultiLayerGeoPackage(const QString &path)
     return dataset
         && addPointLayer(dataset.get(), "cities", 120.1, 30.2, "alpha")
         && addPointLayer(dataset.get(), "stations", 121.3, 31.4, "beta");
+}
+
+bool createReferenceRaster(const QString &path, bool crs, bool transform)
+{
+    auto *driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+    if (!driver)
+        return false;
+    std::unique_ptr<GDALDataset, decltype(&GDALClose)> dataset(
+        driver->Create(path.toUtf8().constData(), 8, 6, 1, GDT_Byte, nullptr),
+        GDALClose);
+    if (!dataset)
+        return false;
+    if (crs) {
+        OGRSpatialReference reference;
+        reference.SetWellKnownGeogCS("WGS84");
+        dataset->SetSpatialRef(&reference);
+    }
+    if (transform) {
+        double affine[] {120, .1, 0, 31, 0, -.1};
+        dataset->SetGeoTransform(affine);
+    }
+    return dataset->GetRasterBand(1)->Fill(7) == CE_None;
 }
 
 } // namespace
@@ -316,5 +340,144 @@ int main(int argc, char **argv)
                    "Dataset removal removed an unrelated layer")) {
         return 10;
     }
+    QTemporaryDir coordinateFiles;
+    const QString geographic = coordinateFiles.filePath("geographic.tif");
+    const QString unreferenced = coordinateFiles.filePath("unreferenced.tif");
+    if (!expect(createReferenceRaster(geographic, true, true) &&
+                    createReferenceRaster(unreferenced, false, false),
+                "Could not create coordinate-isolation fixtures"))
+        return 20;
+    AppController isolated;
+    isolated.loadFiles({geographic});
+    const QString originalId = isolated.layerModel()->layerAt(0)->id;
+    isolated.loadFiles({unreferenced});
+    if (!expect(isolated.layerModel()->count() == 1 &&
+                    isolated.layerModel()->layerAt(0)->id == originalId,
+                "Unreferenced raster changed the scene without confirmation"))
+        return 21;
+    bool approveReset = false;
+    int confirmations = 0;
+    QString targetMode;
+    QString canvasMode;
+    isolated.setCoordinateResetConfirmation(
+        [&](const QString &, const QString &mode, int count) {
+            ++confirmations;
+            targetMode = mode;
+            return approveReset && count > 0;
+        });
+    QObject::connect(&isolated, &AppController::canvasModeRequested,
+                     [&](const QString &mode, int, int) { canvasMode = mode; });
+    isolated.loadFiles({unreferenced});
+    if (!expect(confirmations == 1 && targetMode == "pixel" &&
+                    isolated.layerModel()->layerAt(0)->id == originalId,
+                "Cancelling pixel mode did not preserve the original scene"))
+        return 22;
+    approveReset = true;
+    isolated.loadFiles({unreferenced});
+    const auto *pixelLayer = isolated.layerModel()->layerAt(0);
+    if (!expect(isolated.layerModel()->count() == 1 && pixelLayer &&
+                    pixelLayer->coordinateMode == "pixel" && canvasMode == "pixel" &&
+                    pixelLayer->minLon == 0 && pixelLayer->maxLon == 8 &&
+                    pixelLayer->minLat == 0 && pixelLayer->maxLat == 6 &&
+                    pixelLayer->srs.isEmpty(),
+                "Confirmed unreferenced raster did not replace the scene in pixel coordinates"))
+        return 23;
+    const QString pixelId = pixelLayer->id;
+    const auto values = isolated.queryRasters(1.5, 2.5);
+    if (!expect(values.size() == 1 && values[0].toMap().value("pixel").toString() == "1, 2",
+                "Pixel-mode identify did not use image coordinates"))
+        return 24;
+    approveReset = false;
+    isolated.loadFiles({geographic});
+    if (!expect(isolated.layerModel()->count() == 1 &&
+                    isolated.layerModel()->layerAt(0)->id == pixelId &&
+                    targetMode == "geographic" && canvasMode == "pixel",
+                "Returning to geographic mode bypassed confirmation"))
+        return 25;
+    approveReset = true;
+    isolated.loadFiles({packagePath});
+    if (!expect(isolated.layerModel()->count() == 2 && canvasMode == "geographic" &&
+                    isolated.layerModel()->layerAt(0)->type == "vector",
+                "Geographic vector import did not replace the pixel scene"))
+        return 26;
+    const int beforeGeographicAppend = confirmations;
+    isolated.loadFiles({geographic});
+    if (!expect(isolated.layerModel()->count() == 3 &&
+                    confirmations == beforeGeographicAppend,
+                "Compatible geographic data unexpectedly cleared the scene"))
+        return 27;
+    isolated.loadFiles({coordinateFiles.filePath("missing.tif")});
+    if (!expect(isolated.layerModel()->count() == 3 &&
+                    confirmations == beforeGeographicAppend,
+                "An unreadable file cleared layers or requested a reset"))
+        return 28;
+    for (const auto &fixture : {std::pair{true, false}, std::pair{false, true}}) {
+        const QString path = coordinateFiles.filePath(
+            fixture.first ? "crs-only.tif" : "transform-only.tif");
+        if (!expect(createReferenceRaster(path, fixture.first, fixture.second),
+                    "Could not create partial-georeference raster"))
+            return 29;
+        const int before = confirmations;
+        isolated.loadFiles({path});
+        if (!expect(isolated.layerModel()->count() == 1 && canvasMode == "pixel" &&
+                        isolated.layerModel()->layerAt(0)->coordinateMode == "pixel" &&
+                        confirmations == before + 1,
+                    "Partial georeference or a second pixel raster bypassed isolation"))
+            return 30;
+    }
+    AppController emptyPixelScene;
+    emptyPixelScene.loadFiles({unreferenced});
+    if (!expect(emptyPixelScene.layerModel()->count() == 1 &&
+                    emptyPixelScene.layerModel()->layerAt(0)->coordinateMode == "pixel" &&
+                    QFileInfo::exists(unreferenced) && QFileInfo::exists(geographic),
+                "First pixel raster failed to load or replacement affected source files"))
+        return 31;
+    const auto importUnreferencedArray = [&] {
+        isolated.loadFiles({QStringLiteral(GEOREADER_TEST_DATA_DIR "/scientific.h5")});
+        const auto arrays = isolated.pendingMultidimensionalImport().value("arrays").toList();
+        int selected = -1;
+        for (int i = 0; i < arrays.size(); ++i)
+            if (arrays[i].toMap().value("name").toString().contains("temperature"))
+                selected = i;
+        if (selected < 0)
+            return false;
+        const auto array = arrays[selected].toMap();
+        QVariantList indices;
+        for (const auto &dimension : array.value("dimensions").toList()) {
+            Q_UNUSED(dimension);
+            indices.push_back(0);
+        }
+        QEventLoop loop;
+        QTimer timeout;
+        timeout.setSingleShot(true);
+        QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+        QObject::connect(&isolated, &AppController::multidimensionalImportBusyChanged,
+                         &loop, [&] {
+            if (!isolated.multidimensionalImportBusy())
+                loop.quit();
+        });
+        isolated.confirmMultidimensionalImport(
+            selected, array.value("defaultXDimension").toInt(),
+            array.value("defaultYDimension").toInt(), indices, "auto", "");
+        timeout.start(10000);
+        if (isolated.multidimensionalImportBusy())
+            loop.exec();
+        return !isolated.multidimensionalImportBusy();
+    };
+    const QString beforeArray = isolated.layerModel()->layerAt(0)->id;
+    approveReset = false;
+    const int beforeCancelledArray = confirmations;
+    if (!expect(importUnreferencedArray() && confirmations == beforeCancelledArray + 1 &&
+                    isolated.layerModel()->count() == 1 &&
+                    isolated.layerModel()->layerAt(0)->id == beforeArray,
+                "Cancelled multidimensional pixel import changed the scene"))
+        return 32;
+    approveReset = true;
+    if (!expect(importUnreferencedArray() && isolated.layerModel()->count() == 1 &&
+                    isolated.layerModel()->layerAt(0)->coordinateMode == "pixel" &&
+                    isolated.layerModel()->layerAt(0)->id != beforeArray &&
+                    !isolated.layerModel()->layerAt(0)->multidimensionalArray.isEmpty(),
+                "Multidimensional import bypassed pixel-scene isolation"))
+        return 33;
     return 0;
 }

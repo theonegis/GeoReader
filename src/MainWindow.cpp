@@ -5,8 +5,10 @@
 #include "AttributeTableModel.h"
 #include "LayerModel.h"
 #include "MapCanvas.h"
+#include "UiTypography.h"
 
 #include <QAbstractItemView>
+#include <QAbstractTextDocumentLayout>
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
@@ -15,6 +17,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
+#include <QDrag>
 #include <QDropEvent>
 #include <QEvent>
 #include <QFontComboBox>
@@ -30,11 +33,14 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
+#include <QMimeData>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSlider>
@@ -42,7 +48,9 @@
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QStyle>
+#include <QStyledItemDelegate>
 #include <QTableView>
+#include <QTextDocument>
 #include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
@@ -59,6 +67,93 @@
 
 namespace {
 
+constexpr auto layerDragMimeType = "application/x-georeader-layer-id";
+
+class MetadataItemDelegate final : public QStyledItemDelegate
+{
+public:
+    explicit MetadataItemDelegate(QTreeWidget *tree)
+        : QStyledItemDelegate(tree), m_tree(tree)
+    {
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option,
+                   const QModelIndex &index) const override
+    {
+        const QSize nativeSize = QStyledItemDelegate::sizeHint(option, index);
+        // Keep property names on one line so ResizeToContents can size column 0.
+        if (index.column() == 0)
+            return nativeSize;
+        QTextDocument document;
+        configureDocument(document, option, index, m_tree->columnWidth(1));
+        return QSize(nativeSize.width(), std::max(nativeSize.height(),
+            static_cast<int>(std::ceil(document.size().height())) + 12));
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        auto cell = option;
+        initStyleOption(&cell, index);
+        const QStyle *cellStyle = cell.widget ? cell.widget->style()
+                                              : QApplication::style();
+        cellStyle->drawPrimitive(QStyle::PE_PanelItemViewItem, &cell,
+                                 painter, cell.widget);
+        QTextDocument document;
+        configureDocument(document, cell, index, cell.rect.width());
+        QAbstractTextDocumentLayout::PaintContext context;
+        context.palette = cell.palette;
+        if ((cell.state & QStyle::State_Selected) && m_tree->hasFocus())
+            context.palette.setColor(QPalette::Text,
+                cell.palette.color(QPalette::HighlightedText));
+        painter->save();
+        // Clip every cell even during a pending resize/layout pass.
+        painter->setClipRect(cell.rect, Qt::IntersectClip);
+        painter->translate(cell.rect.left() + 8, cell.rect.top() + 6);
+        document.documentLayout()->draw(painter, context);
+        painter->restore();
+    }
+
+private:
+    static void configureDocument(QTextDocument &document,
+                                   const QStyleOptionViewItem &option,
+                                   const QModelIndex &index, int width)
+    {
+        document.setDocumentMargin(0);
+        document.setDefaultFont(option.font);
+        QTextOption textOption;
+        textOption.setWrapMode(index.column() == 1
+            ? QTextOption::WrapAtWordBoundaryOrAnywhere : QTextOption::NoWrap);
+        document.setDefaultTextOption(textOption);
+        document.setPlainText(index.data(Qt::DisplayRole).toString());
+        document.setTextWidth(std::max(1, width - 16));
+    }
+
+    QTreeWidget *m_tree;
+};
+
+class LayerItemDelegate final : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        // Paint the native selection/hover background across the action area,
+        // while reserving a stable width for text and icons.
+        auto background = option;
+        initStyleOption(&background, index);
+        const auto *itemStyle = option.widget ? option.widget->style()
+                                               : QApplication::style();
+        itemStyle->drawPrimitive(QStyle::PE_PanelItemViewItem, &background,
+                                 painter, option.widget);
+        auto content = option;
+        content.rect.adjust(0, 0, -40, 0);
+        QStyledItemDelegate::paint(painter, content, index);
+    }
+};
+
 class LayerListWidget final : public QListWidget
 {
 public:
@@ -72,18 +167,119 @@ public:
         setDropIndicatorShown(true);
         setDragDropMode(QAbstractItemView::InternalMove);
         setDefaultDropAction(Qt::MoveAction);
+        setMouseTracking(true);
+        setItemDelegate(new LayerItemDelegate(this));
+        m_removeButton = new QToolButton(viewport());
+        m_removeButton->setObjectName(QStringLiteral("layerRemoveButton"));
+        m_removeButton->setIcon(QIcon(QStringLiteral(":/icons/ui/trash.svg")));
+        m_removeButton->setIconSize(QSize(16, 16));
+        m_removeButton->setFixedSize(30, 30);
+        m_removeButton->setAutoRaise(true);
+        m_removeButton->setToolTip(MainWindow::tr("移除图层"));
+        m_removeButton->setAccessibleName(MainWindow::tr("移除图层"));
+        m_removeButton->setProperty("class", QStringLiteral("danger"));
+        m_removeButton->hide();
+        connect(m_removeButton, &QToolButton::clicked, this, [this] {
+            if (m_hovered.isValid() && removeHandler)
+                removeHandler(m_hovered.row());
+        });
+        connect(verticalScrollBar(), &QScrollBar::valueChanged,
+                this, [this] { hideRemoveButton(); });
+        connect(model(), &QAbstractItemModel::rowsAboutToBeRemoved,
+                this, [this] { hideRemoveButton(); });
     }
 
     MoveHandler moveHandler;
+    std::function<void(int)> removeHandler;
 
 protected:
+    void startDrag(Qt::DropActions) override
+    {
+        if (!currentItem())
+            return;
+        hideRemoveButton();
+        QPointer<QDrag> drag = new QDrag(this);
+        auto *data = model()->mimeData(selectedIndexes());
+        data->setData(layerDragMimeType,
+                      currentItem()->data(Qt::UserRole).toString().toUtf8());
+        drag->setMimeData(data);
+        const QRect rowRect = visualItemRect(currentItem());
+        drag->setPixmap(viewport()->grab(rowRect));
+        drag->setHotSpot(rowRect.center() - rowRect.topLeft());
+        // The model owns reordering. QListWidget's default startDrag() also
+        // deletes the source rows after a MoveAction, even after our refresh.
+        drag->exec(Qt::MoveAction);
+        if (drag)
+            drag->deleteLater();
+    }
+
+    void dragEnterEvent(QDragEnterEvent *event) override
+    {
+        if (!event->mimeData()->hasFormat(layerDragMimeType)) {
+            event->ignore();
+            return;
+        }
+        QListWidget::dragEnterEvent(event);
+        event->setDropAction(Qt::MoveAction);
+        event->accept();
+    }
+
+    void dragMoveEvent(QDragMoveEvent *event) override
+    {
+        if (!event->mimeData()->hasFormat(layerDragMimeType)) {
+            event->ignore();
+            return;
+        }
+        QListWidget::dragMoveEvent(event);
+        event->setDropAction(Qt::MoveAction);
+        event->accept();
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        QListWidget::mouseMoveEvent(event);
+        m_hovered = indexAt(event->position().toPoint());
+        const QRect rowRect = visualRect(m_hovered);
+        if (!m_hovered.isValid() || state() == QAbstractItemView::DraggingState) {
+            hideRemoveButton();
+            return;
+        }
+        m_removeButton->move(viewport()->width() - m_removeButton->width() - 6,
+                            rowRect.center().y() - m_removeButton->height() / 2);
+        m_removeButton->show();
+        m_removeButton->raise();
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        hideRemoveButton();
+        QListWidget::leaveEvent(event);
+    }
+
     void dropEvent(QDropEvent *event) override
     {
-        const int from = currentRow();
+        const QString sourceId = QString::fromUtf8(
+            event->mimeData()->data(layerDragMimeType));
+        if (sourceId.isEmpty()) {
+            event->ignore();
+            return;
+        }
+        int from = -1;
+        for (int row = 0; row < count(); ++row) {
+            if (item(row)->data(Qt::UserRole).toString() == sourceId) {
+                from = row;
+                break;
+            }
+        }
         int to = indexAt(event->position().toPoint()).row();
         if (to < 0)
             to = count() - 1;
-        event->acceptProposedAction();
+        if (from < 0) {
+            event->ignore();
+            return;
+        }
+        event->setDropAction(Qt::MoveAction);
+        event->accept();
         if (moveHandler && from >= 0 && to >= 0 && from != to) {
             const MoveHandler handler = moveHandler;
             // rowsMoved 会重建本列表；等 dropEvent 退出后再改模型，避免在
@@ -93,6 +289,16 @@ protected:
             });
         }
     }
+
+private:
+    void hideRemoveButton()
+    {
+        m_removeButton->hide();
+        m_hovered = QPersistentModelIndex();
+    }
+
+    QToolButton *m_removeButton = nullptr;
+    QPersistentModelIndex m_hovered;
 };
 
 class FrostedToolBar final : public QToolBar
@@ -156,8 +362,9 @@ private:
 class FloatingPanelFrame final : public QFrame
 {
 public:
-    explicit FloatingPanelFrame(QWidget *parent = nullptr)
-        : QFrame(parent)
+    explicit FloatingPanelFrame(QWidget *parent = nullptr,
+                                QPalette::ColorRole background = QPalette::Window)
+        : QFrame(parent), m_background(background)
     {
         setFrameShape(QFrame::NoFrame);
         setAutoFillBackground(false);
@@ -169,11 +376,14 @@ protected:
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setPen(QPen(palette().color(QPalette::Midlight), 1.0));
-        painter.setBrush(palette().color(QPalette::Window));
+        painter.setBrush(palette().color(m_background));
         painter.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5),
                                 9.0, 9.0);
         QFrame::paintEvent(event);
     }
+
+private:
+    QPalette::ColorRole m_background;
 };
 
 class StyleCardFrame final : public QFrame
@@ -231,13 +441,7 @@ QLabel *sectionTitle(const QString &text, QWidget *parent = nullptr)
 
 QFont compactTableFont()
 {
-    QFont font = QApplication::font();
-    if (font.pointSizeF() > 0.0)
-        font.setPointSizeF(std::clamp(font.pointSizeF() * 0.72, 9.0, 12.5));
-    else if (font.pixelSize() > 0)
-        font.setPixelSize(std::clamp(
-            static_cast<int>(std::lround(font.pixelSize() * 0.72)), 11, 17));
-    return font;
+    return UiTypography::dataFont();
 }
 
 void configureTableTypography(QAbstractItemView *view, QHeaderView *header)
@@ -254,7 +458,7 @@ void configureTableTypography(QAbstractItemView *view, QHeaderView *header)
     // header rule makes the compact table tier explicit without leaking into
     // parent cards or controls such as QComboBox.
     const double size = font.pointSizeF() > 0.0
-        ? font.pointSizeF() : 10.0;
+        ? font.pointSizeF() : 11.0;
     header->setStyleSheet(QStringLiteral(
         "QHeaderView::section { color: palette(text); font-size: %1pt; "
         "font-weight: 500; }")
@@ -342,6 +546,7 @@ QString panelTitle(MainWindow::Panel panel)
     case MainWindow::Panel::Raster: return QObject::tr("栅格值");
     case MainWindow::Panel::Vector: return QObject::tr("矢量属性");
     case MainWindow::Panel::Settings: return QObject::tr("设置");
+    case MainWindow::Panel::Scientific: return QObject::tr("变量与时序");
     case MainWindow::Panel::None: break;
     }
     return {};
@@ -384,16 +589,41 @@ MainWindow::MainWindow(AppController *controller, QWidget *parent)
     buildToolRail();
     buildFloatingPanel();
     buildMapOverlays();
-    auto *scientific = new ScientificPanel(controller, m_canvas, this);
-    addDockWidget(Qt::RightDockWidgetArea, scientific);
-    scientific->hide();
-    auto *scientificAction = scientific->toggleViewAction();
-    scientificAction->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
-    scientificAction->setToolTip(tr("变量切片 / 像元时序"));
-    m_toolRail->addAction(scientificAction);
+
+    m_controller->setCoordinateResetConfirmation(
+        [window = QPointer<MainWindow>(this)](
+            const QString &name, const QString &mode, int count) {
+        if (!window)
+            return false;
+        const bool pixel = mode == QStringLiteral("pixel");
+        const QString text = pixel
+            ? tr("即将以像素坐标显示“%1”。\n"
+                 "像素位置不能用于与其他数据进行地理叠加。\n\n"
+                 "继续将清空全部 %2 个已加载图层，并隐藏底图。")
+                  .arg(name).arg(count)
+            : tr("即将返回地理坐标模式并加载“%1”。\n"
+                 "当前像素坐标数据不能与地理坐标图层混合显示。\n\n"
+                 "继续将清空全部 %2 个已加载图层，并恢复底图。")
+                  .arg(name).arg(count);
+        QMessageBox question(QMessageBox::Warning,
+                             tr("切换坐标模式"), text,
+                             QMessageBox::Cancel, window.data());
+        question.setObjectName(QStringLiteral("coordinateContextConfirmation"));
+        question.button(QMessageBox::Cancel)->setText(tr("取消"));
+        question.setInformativeText(tr("仅移除当前显示的图层，不会修改或删除源文件。"));
+        auto *accept = question.addButton(tr("清空图层并加载"), QMessageBox::AcceptRole);
+        question.setDefaultButton(QMessageBox::Cancel);
+        question.setEscapeButton(QMessageBox::Cancel);
+        question.exec();
+        return question.clickedButton() == accept;
+    });
 
     connect(m_controller, &AppController::canvasModeRequested,
             m_canvas, &MapCanvas::setCoordinateMode);
+    connect(m_canvas, &MapCanvas::coordinateModeChanged, this, [this] {
+        updateCoordinates();
+        m_baseMapCombo->setEnabled(m_canvas->coordinateMode() != QStringLiteral("pixel"));
+    });
     connect(m_controller,
             &AppController::pendingMultidimensionalImportChanged,
             this, &MainWindow::showMultidimensionalImportDialog);
@@ -425,6 +655,10 @@ MainWindow::MainWindow(AppController *controller, QWidget *parent)
         m_toolRail->update();
     });
     connect(m_controller, &AppController::fontChanged, this, [this] {
+        QFont coordinateFont = m_coordinateLabel->font();
+        coordinateFont.setPointSizeF(UiTypography::dataFont().pointSizeF());
+        m_coordinateLabel->setFont(coordinateFont);
+        m_canvas->update();
         // 加粗标题和紧凑表头使用相对字号；字体变化后延迟重建，确保它们
         // 以新的应用字体为基准，同时避免在设置控件的信号栈内删除控件。
         if (!m_panelRebuildScheduled) {
@@ -450,6 +684,15 @@ MainWindow::MainWindow(AppController *controller, QWidget *parent)
         };
         m_selectedLayer = adjusted(m_selectedLayer);
         m_selectedVectorLayer = adjusted(m_selectedVectorLayer);
+        if (m_controller->layerModel()->count() == 0) {
+            m_canvas->clearSelectedFeature();
+            if (m_attributeDialog)
+                m_attributeDialog->close();
+            for (auto *dialog : findChildren<QDialog *>()) {
+                if (dialog->findChild<QTreeWidget *>(QStringLiteral("metadataTree")))
+                    dialog->close();
+            }
+        }
         refreshLayerList();
         updateVectorLayerChoices();
         m_hasLastRasterCoordinate = false;
@@ -606,11 +849,8 @@ void MainWindow::buildToolRail()
     m_toolRail->setIconSize(QSize(24, 24));
     m_toolRail->setStyleSheet(toolBarStyle);
     m_toolRail->setProperty("glassOpacity", m_controller->toolBarOpacity());
-    auto *shadow = new QGraphicsDropShadowEffect(m_toolRail);
-    shadow->setBlurRadius(22.0);
-    shadow->setOffset(0.0, 4.0);
-    shadow->setColor(QColor(0, 0, 0, 45));
-    m_toolRail->setGraphicsEffect(shadow);
+    // 磨砂条已经有圆角描边。再叠加 DropShadow 会把半透明玻璃模糊成
+    // 贴在地图边缘的灰黑带，而不是一圈淡阴影。
     m_toolRail->addAction(m_openAction);
     if (auto *button = qobject_cast<QToolButton *>(
             m_toolRail->widgetForAction(m_openAction))) {
@@ -637,6 +877,8 @@ void MainWindow::buildToolRail()
     addPanelButton(&m_rasterButton, QStyle::SP_FileIcon, Panel::Raster);
     addPanelButton(&m_vectorButton, QStyle::SP_FileDialogContentsView,
                    Panel::Vector);
+    addPanelButton(&m_scientificButton, QStyle::SP_MediaPlay, Panel::Scientific);
+    m_scientificButton->setObjectName(QStringLiteral("scientificPanelButton"));
 
     auto *spacer = new QWidget(m_toolRail);
     spacer->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
@@ -699,6 +941,7 @@ void MainWindow::buildFloatingPanel()
     headerLayout->addLayout(titles, 1);
     m_panelCloseButton = new QToolButton(header);
     m_panelCloseButton->setObjectName(QStringLiteral("floatingPanelClose"));
+    m_panelCloseButton->setAccessibleName(tr("关闭"));
     m_panelCloseButton->setAutoRaise(true);
     m_panelCloseButton->setFixedSize(32, 32);
     m_panelCloseButton->setIconSize(QSize(18, 18));
@@ -718,6 +961,17 @@ void MainWindow::buildFloatingPanel()
     m_panels->addWidget(m_rasterPanel);
     m_panels->addWidget(m_vectorPanel);
     m_panels->addWidget(m_settingsPanel);
+    if (!m_scientificPanel) {
+        m_scientificPanel = new ScientificPanel(m_controller, m_canvas, m_panels);
+        connect(m_scientificPanel, &ScientificPanel::activationRequested,
+                this, [this] { showPanel(Panel::Scientific); });
+        connect(m_scientificPanel, &ScientificPanel::dismissalRequested,
+                this, [this] {
+            if (m_activePanel == Panel::Scientific)
+                showPanel(Panel::None);
+        });
+    }
+    m_panels->addWidget(m_scientificPanel);
     panelLayout->addWidget(m_panels, 1);
     m_panelFrame->hide();
     updatePanelHeader();
@@ -762,19 +1016,18 @@ void MainWindow::buildMapOverlays()
     m_coordinateFrame = new FloatingPanelFrame(m_mapHost);
     m_coordinateFrame->setObjectName(QStringLiteral("coordinateBadge"));
     auto *coordinateLayout = new QHBoxLayout(m_coordinateFrame);
-    coordinateLayout->setContentsMargins(10, 0, 10, 0);
+    coordinateLayout->setContentsMargins(10, 4, 10, 4);
     coordinateLayout->setSpacing(8);
     m_coordinateLabel = new QLabel(m_coordinateFrame);
-    QFont coordinateFont = m_coordinateLabel->font();
+    QFont coordinateFont = UiTypography::dataFont();
     coordinateFont.setFamilies({QStringLiteral("Menlo"),
                                 QStringLiteral("Monospace")});
-    coordinateFont.setPixelSize(10);
     m_coordinateLabel->setFont(coordinateFont);
     coordinateLayout->addWidget(m_coordinateLabel);
     m_renderingLabel = new QLabel(m_coordinateFrame);
     m_renderingLabel->setForegroundRole(QPalette::PlaceholderText);
     coordinateLayout->addWidget(m_renderingLabel);
-    m_coordinateFrame->setFixedHeight(30);
+    m_coordinateFrame->setMinimumHeight(30);
 
     m_statusLabel = new QLabel(m_mapHost);
     m_statusLabel->setObjectName(QStringLiteral("transientStatusBadge"));
@@ -814,6 +1067,7 @@ QWidget *MainWindow::buildLayersPanel()
     baseMapRow->setSpacing(8);
     baseMapRow->addWidget(new QLabel(tr("底图"), listSection));
     m_baseMapCombo = new QComboBox(listSection);
+    m_baseMapCombo->setEnabled(m_canvas->coordinateMode() != QStringLiteral("pixel"));
     m_baseMapCombo->addItem(tr("OpenStreetMap"), QStringLiteral("osm"));
     m_baseMapCombo->addItem(tr("Esri 世界影像"),
                             QStringLiteral("esri_imagery"));
@@ -831,15 +1085,16 @@ QWidget *MainWindow::buildLayersPanel()
 
     auto *list = new LayerListWidget(listSection);
     list->setObjectName(QStringLiteral("layerList"));
-    list->setAlternatingRowColors(true);
+    list->setAlternatingRowColors(false);
     list->setSelectionMode(QAbstractItemView::SingleSelection);
     list->setMinimumHeight(150);
     list->setFrameShape(QFrame::NoFrame);
-    list->setStyleSheet(QStringLiteral(
-        "QListWidget { background: transparent; border: 0; }"));
+    list->setAutoFillBackground(false);
+    list->viewport()->setAutoFillBackground(false);
     list->moveHandler = [this](int from, int to) {
         moveLayer(from, to);
     };
+    list->removeHandler = [this](int row) { removeLayer(row); };
     m_layerList = list;
     connect(m_layerList, &QListWidget::currentRowChanged, this,
             [this](int row) {
@@ -856,11 +1111,11 @@ QWidget *MainWindow::buildLayersPanel()
     listSectionLayout->addWidget(m_layerList, 1);
     layout->addWidget(listSection, 2);
 
-    auto *propertySection = new StyleCardFrame(page);
+    auto *propertySection = new FloatingPanelFrame(page, QPalette::Base);
     propertySection->setObjectName(QStringLiteral("selectedLayerSection"));
     auto *propertySectionLayout = new QVBoxLayout(propertySection);
-    propertySectionLayout->setContentsMargins(10, 8, 10, 10);
-    propertySectionLayout->setSpacing(6);
+    propertySectionLayout->setContentsMargins(14, 14, 14, 14);
+    propertySectionLayout->setSpacing(14);
     auto *propertyTitle = new QLabel(tr("所选图层属性"), propertySection);
     QFont propertyTitleFont = propertyTitle->font();
     propertyTitleFont.setWeight(QFont::DemiBold);
@@ -868,14 +1123,18 @@ QWidget *MainWindow::buildLayersPanel()
     propertySectionLayout->addWidget(propertyTitle);
 
     auto *scroll = new QScrollArea(propertySection);
+    scroll->setObjectName(QStringLiteral("layerPropertyScroll"));
+    scroll->setAutoFillBackground(false);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scroll->viewport()->setAutoFillBackground(false);
     m_layerEditor = new QWidget(scroll);
+    m_layerEditor->setObjectName(QStringLiteral("layerEditor"));
     m_layerEditor->setAutoFillBackground(false);
     auto *editor = new QVBoxLayout(m_layerEditor);
     editor->setContentsMargins(0, 0, 0, 0);
+    editor->setSpacing(16);
     m_layerIdentity = new QLabel(m_layerEditor);
     m_layerIdentity->setWordWrap(true);
     editor->addWidget(m_layerIdentity);
@@ -900,15 +1159,16 @@ QWidget *MainWindow::buildLayersPanel()
                                  QSizePolicy::Preferred);
     auto *vectorSectionLayout = new QVBoxLayout(vectorSection);
     vectorSectionLayout->setContentsMargins(0, 0, 0, 0);
-    vectorSectionLayout->setSpacing(6);
+    vectorSectionLayout->setSpacing(10);
     auto *vectorTitle = new QLabel(tr("矢量样式"), vectorSection);
     QFont vectorTitleFont = vectorTitle->font();
     vectorTitleFont.setWeight(QFont::DemiBold);
     vectorTitle->setFont(vectorTitleFont);
     vectorSectionLayout->addWidget(vectorTitle);
-    auto *vectorGroup = new StyleCardFrame(vectorSection);
+    auto *vectorGroup = new QWidget(vectorSection);
     auto *vectorForm = new QFormLayout(vectorGroup);
-    vectorForm->setContentsMargins(14, 12, 14, 12);
+    vectorForm->setContentsMargins(0, 0, 0, 0);
+    vectorForm->setVerticalSpacing(10);
     m_vectorStyleForm = vectorForm;
     m_lineColorButton = new QPushButton(vectorGroup);
     m_fillColorButton = new QPushButton(vectorGroup);
@@ -938,18 +1198,22 @@ QWidget *MainWindow::buildLayersPanel()
                                  QSizePolicy::Preferred);
     auto *rasterSectionLayout = new QVBoxLayout(rasterSection);
     rasterSectionLayout->setContentsMargins(0, 0, 0, 0);
-    rasterSectionLayout->setSpacing(6);
+    rasterSectionLayout->setSpacing(10);
     auto *rasterTitle = new QLabel(tr("栅格显示"), rasterSection);
     QFont rasterTitleFont = rasterTitle->font();
     rasterTitleFont.setWeight(QFont::DemiBold);
     rasterTitle->setFont(rasterTitleFont);
     rasterSectionLayout->addWidget(rasterTitle);
-    auto *rasterGroup = new StyleCardFrame(rasterSection);
+    auto *rasterGroup = new QWidget(rasterSection);
     auto *rasterLayout = new QVBoxLayout(rasterGroup);
-    rasterLayout->setContentsMargins(14, 12, 14, 12);
+    rasterLayout->setContentsMargins(0, 0, 0, 0);
+    rasterLayout->setSpacing(10);
     auto *rasterForm = new QFormLayout;
     m_rasterStyleForm = rasterForm;
     m_stretchCombo = new QComboBox(rasterGroup);
+    m_stretchCombo->setSizeAdjustPolicy(
+        QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_stretchCombo->setMinimumContentsLength(8);
     m_stretchCombo->addItem(tr("最小值–最大值"), QStringLiteral("minmax"));
     m_stretchCombo->addItem(tr("2%–98% 累计裁剪"), QStringLiteral("percent_clip"));
     m_stretchCombo->addItem(tr("均值 ±2σ"), QStringLiteral("standard_deviation"));
@@ -1038,6 +1302,9 @@ QWidget *MainWindow::buildLayersPanel()
     auto *noDataRow = new QHBoxLayout;
     m_noDataCheck = new QCheckBox(tr("使用 NoData"), rasterGroup);
     m_noDataEdit = new QLineEdit(rasterGroup);
+    // The theme's preferred line-edit width must not widen the whole editor
+    // beyond its scroll viewport and clip unrelated controls.
+    m_noDataEdit->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     m_noDataEdit->setPlaceholderText(QStringLiteral("nan"));
     noDataRow->addWidget(m_noDataCheck);
     noDataRow->addWidget(m_noDataEdit, 1);
@@ -1068,26 +1335,20 @@ QWidget *MainWindow::buildLayersPanel()
     auto *metadata = new QPushButton(tr("元数据"), m_layerEditor);
     auto *attributes = new QPushButton(tr("属性表"), m_layerEditor);
     m_attributeButton = attributes;
-    auto *remove = new QToolButton(m_layerEditor);
-    remove->setIcon(QIcon(QStringLiteral(":/icons/ui/trash.svg")));
-    remove->setIconSize(QSize(18, 18));
-    remove->setFixedSize(36, 36);
-    remove->setToolTip(tr("移除图层"));
-    remove->setProperty("class", QStringLiteral("danger"));
     connect(metadata, &QPushButton::clicked, this,
             [this] { showMetadata(selectedLayerRow()); });
     connect(attributes, &QPushButton::clicked, this,
             [this] { showAttributeTable(selectedLayerRow()); });
-    connect(remove, &QPushButton::clicked,
-            this, &MainWindow::removeSelectedLayer);
     detailsRow->addWidget(metadata);
     detailsRow->addWidget(attributes);
     metadata->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     attributes->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    detailsRow->addWidget(remove);
     editor->addLayout(detailsRow);
     editor->addStretch();
     scroll->setWidget(m_layerEditor);
+    // setWidget() enables autoFillBackground; disable it after ownership moves
+    // so the editor does not paint a square over the rounded property card.
+    m_layerEditor->setAutoFillBackground(false);
     propertySectionLayout->addWidget(scroll, 1);
     layout->addWidget(propertySection, 3);
     return page;
@@ -1108,8 +1369,6 @@ QWidget *MainWindow::buildRasterPanel()
     locationLayout->addWidget(sectionTitle(tr("查询位置"), locationSection));
     m_rasterCoordinate = mutedLabel({}, locationSection);
     locationLayout->addWidget(m_rasterCoordinate);
-    locationLayout->addWidget(mutedLabel(
-        tr("移动鼠标，实时读取所有可见栅格像元。"), locationSection));
     layout->addWidget(locationSection);
 
     auto *resultsSection = new StyleCardFrame(page);
@@ -1354,6 +1613,7 @@ void MainWindow::showMultidimensionalImportDialog()
     coordinateMode->addItem(tr("像素坐标"), QStringLiteral("pixel"));
     form->addRow(tr("坐标模式"), coordinateMode);
     auto *crs = new QLineEdit(dialog);
+    crs->setObjectName(QStringLiteral("scientificSourceCrs"));
     crs->setPlaceholderText(QStringLiteral("EPSG:4326"));
     form->addRow(tr("源 CRS"), crs);
     layout->addLayout(form);
@@ -1466,6 +1726,7 @@ void MainWindow::showPanel(Panel panel)
     m_rasterButton->setChecked(panel == Panel::Raster);
     m_vectorButton->setChecked(panel == Panel::Vector);
     m_settingsButton->setChecked(panel == Panel::Settings);
+    m_scientificButton->setChecked(panel == Panel::Scientific);
     const bool inspectionPanel = panel == Panel::Raster
         || panel == Panel::Vector;
     {
@@ -1486,7 +1747,8 @@ void MainWindow::showPanel(Panel panel)
     }
     QWidget *page = panel == Panel::Layers ? m_layersPanel
         : panel == Panel::Raster ? m_rasterPanel
-        : panel == Panel::Vector ? m_vectorPanel : m_settingsPanel;
+        : panel == Panel::Vector ? m_vectorPanel
+        : panel == Panel::Scientific ? m_scientificPanel : m_settingsPanel;
     m_panels->setCurrentWidget(page);
     updatePanelHeader();
     positionFloatingUi();
@@ -1510,6 +1772,7 @@ void MainWindow::setActivePanel(const QString &panel)
               : normalized == QStringLiteral("raster") ? Panel::Raster
               : normalized == QStringLiteral("vector") ? Panel::Vector
               : normalized == QStringLiteral("settings") ? Panel::Settings
+              : normalized == QStringLiteral("scientific") ? Panel::Scientific
                                                           : Panel::None);
 }
 
@@ -1530,6 +1793,7 @@ void MainWindow::refreshLayerList()
     for (int row = 0; row < m_controller->layerModel()->count(); ++row) {
         const LayerSnapshot *layer = m_controller->layerModel()->layerAt(row);
         auto *item = new QListWidgetItem(m_layerList);
+        item->setData(Qt::UserRole, layer->id);
         item->setText(QStringLiteral("%1\n%2 · %3")
                           .arg(layer->name, geometryLabel(*layer),
                                layer->crsLabel.isEmpty() ? tr("未知坐标系")
@@ -1742,15 +2006,21 @@ void MainWindow::fitSelectedLayer()
 
 void MainWindow::removeSelectedLayer()
 {
-    const int row = selectedLayerRow();
+    removeLayer(selectedLayerRow());
+}
+
+void MainWindow::removeLayer(int row)
+{
     const LayerSnapshot *layer = m_controller->layerModel()->layerAt(row);
     if (!layer)
         return;
+    const QString id = layer->id;
     if (QMessageBox::question(
             this, tr("移除图层"),
             tr("确定从当前项目移除“%1”吗？").arg(layer->name))
         == QMessageBox::Yes) {
-        m_controller->layerModel()->removeLayer(row);
+        m_controller->layerModel()->removeLayer(
+            m_controller->layerModel()->indexOfLayer(id));
     }
 }
 
@@ -1975,9 +2245,12 @@ void MainWindow::showMetadata(int row)
     dialog->resize(720, 620);
     auto *layout = new QVBoxLayout(dialog);
     auto *tree = new QTreeWidget(dialog);
+    tree->setObjectName(QStringLiteral("metadataTree"));
     tree->setColumnCount(2);
     tree->setHeaderLabels({tr("属性"), tr("值")});
     tree->setAlternatingRowColors(true);
+    tree->setUniformRowHeights(false);
+    tree->setItemDelegate(new MetadataItemDelegate(tree));
     QHash<QString, QTreeWidgetItem *> sections;
     const QVariantList entries = metadata.value(QStringLiteral("entries")).toList();
     for (const QVariant &entryValue : entries) {
@@ -2004,6 +2277,12 @@ void MainWindow::showMetadata(int row)
     tree->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     tree->header()->setSectionResizeMode(1, QHeaderView::Stretch);
     configureTableTypography(tree, tree->header());
+    connect(m_controller, &AppController::fontChanged, tree, [tree] {
+        configureTableTypography(tree, tree->header());
+        tree->doItemsLayout();
+    });
+    connect(tree->header(), &QHeaderView::sectionResized,
+            tree, &QTreeWidget::doItemsLayout, Qt::QueuedConnection);
     layout->addWidget(tree);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
     buttons->button(QDialogButtonBox::Close)->setText(tr("关闭"));
@@ -2059,6 +2338,11 @@ void MainWindow::showAttributeTable(int row)
     table->horizontalHeader()->setStretchLastSection(true);
     configureTableTypography(table, table->horizontalHeader());
     configureTableTypography(nullptr, table->verticalHeader());
+    connect(m_controller, &AppController::fontChanged, table, [table] {
+        configureTableTypography(table, table->horizontalHeader());
+        configureTableTypography(nullptr, table->verticalHeader());
+        table->resizeRowsToContents();
+    });
     table->resizeColumnsToContents();
     connect(table->horizontalHeader(), &QHeaderView::sectionClicked,
             dialog, [model, table, ascending = true, last = -1]
@@ -2121,7 +2405,10 @@ void MainWindow::retranslateUi()
     m_rasterButton->setToolTip(tr("栅格值查看"));
     m_vectorButton->setToolTip(tr("矢量属性查看"));
     m_settingsButton->setToolTip(tr("设置"));
+    m_scientificButton->setToolTip(tr("变量与时序"));
+    m_scientificButton->setAccessibleName(tr("变量与时序"));
     m_panelCloseButton->setToolTip(tr("关闭"));
+    m_panelCloseButton->setAccessibleName(tr("关闭"));
     if (auto *label = m_emptyState->findChild<QLabel *>(
             QStringLiteral("emptyStateTitle")))
         label->setText(tr("打开空间数据"));
@@ -2145,7 +2432,32 @@ void MainWindow::retranslateUi()
 
 void MainWindow::refreshThemedIcons()
 {
-    const auto icon = [](const QString &path) { return QIcon(path); };
+    // themeChanged precedes the application's palette refresh.
+    const auto *themeStyle = qobject_cast<oclero::qlementine::QlementineStyle *>(
+        QApplication::style());
+    const QColor background = themeStyle ? themeStyle->theme().backgroundColorMain2
+                                         : palette().color(QPalette::Window);
+    const QColor railColor = background.lightness() < 128
+        ? QColor(Qt::white) : QColor(Qt::black);
+    const auto tintedIcon = [railColor](const QIcon &source) {
+        QIcon result;
+        for (int scale : {1, 2, 3}) {
+            QPixmap pixmap = source.pixmap(QSize(24, 24) * scale);
+            QPainter painter(&pixmap);
+            painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+            painter.fillRect(pixmap.rect(), railColor);
+            painter.end();
+            pixmap.setDevicePixelRatio(scale);
+            for (auto mode : {QIcon::Normal, QIcon::Active, QIcon::Selected}) {
+                result.addPixmap(pixmap, mode, QIcon::Off);
+                result.addPixmap(pixmap, mode, QIcon::On);
+            }
+        }
+        return result;
+    };
+    const auto icon = [tintedIcon](const QString &path) {
+        return tintedIcon(QIcon(path));
+    };
     if (m_openAction)
         m_openAction->setIcon(icon(QStringLiteral(":/icons/ui/folder.svg")));
     if (m_zoomInAction)
@@ -2167,12 +2479,14 @@ void MainWindow::refreshThemedIcons()
         m_vectorButton->setIcon(icon(QStringLiteral(":/icons/ui/vector.svg")));
     if (m_settingsButton)
         m_settingsButton->setIcon(icon(QStringLiteral(":/icons/ui/settings.svg")));
+    if (m_scientificButton)
+        m_scientificButton->setIcon(tintedIcon(style()->standardIcon(QStyle::SP_MediaPlay)));
     if (m_panelCloseButton)
         m_panelCloseButton->setIcon(
-            icon(QStringLiteral(":/icons/ui/close.svg")));
+            QIcon(QStringLiteral(":/icons/ui/close.svg")));
     if (m_emptyIcon)
         m_emptyIcon->setPixmap(
-            icon(QStringLiteral(":/icons/ui/folder.svg")).pixmap(25, 25));
+            QIcon(QStringLiteral(":/icons/ui/folder.svg")).pixmap(25, 25));
 }
 
 void MainWindow::updatePanelHeader()
@@ -2198,6 +2512,9 @@ void MainWindow::updatePanelHeader()
     case Panel::Settings:
         subtitle = tr("语言、界面、Qlementine 主题与快捷键");
         break;
+    case Panel::Scientific:
+        subtitle = tr("多维切片与像元时序");
+        break;
     case Panel::None:
         break;
     }
@@ -2221,6 +2538,7 @@ void MainWindow::positionFloatingUi()
                             std::max(80, area.height() - 2 * margin));
 
     int preferredPanelWidth = m_activePanel == Panel::Raster ? 450
+        : m_activePanel == Panel::Scientific ? 480
         : m_activePanel == Panel::Settings ? 410 : 360;
     if (m_activePanel == Panel::Layers) {
         const LayerSnapshot *layer =
@@ -2244,9 +2562,10 @@ void MainWindow::positionFloatingUi()
     }
     if (m_coordinateFrame) {
         const int width = std::max(190, m_coordinateFrame->sizeHint().width());
+        const int height = std::max(30, m_coordinateFrame->sizeHint().height());
         m_coordinateFrame->setGeometry(
-            margin + primaryWidth + 10, area.height() - 30 - margin,
-            width, 30);
+            margin + primaryWidth + 10, area.height() - height - margin,
+            width, height);
     }
     if (m_statusLabel && m_statusLabel->isVisible()) {
         m_statusLabel->adjustSize();
@@ -2278,6 +2597,11 @@ void MainWindow::rebuildFloatingPanelForLanguage()
 {
     const Panel panel = m_activePanel;
     m_activePanel = Panel::None;
+    // Preserve the scientific view and ongoing jobs across chrome rebuilds.
+    if (m_scientificPanel) {
+        m_panels->removeWidget(m_scientificPanel);
+        m_scientificPanel->setParent(m_mapHost);
+    }
     if (m_rasterTimer) {
         m_rasterTimer->stop();
         delete m_rasterTimer;

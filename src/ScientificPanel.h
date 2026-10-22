@@ -1,5 +1,5 @@
 #pragma once
-#include <QDockWidget>
+#include <QWidget>
 #include <QVariantMap>
 class AppController;
 class LayerModel;
@@ -14,10 +14,11 @@ class QPlainTextEdit;
 class QTimer;
 class QPushButton;
 class ScientificPlot;
+class QHideEvent;
 
 // Native Widgets presentation. ScientificData owns no GUI state and shares the
 // same read lock with the main map renderer and multidimensional importer.
-class ScientificPanel final : public QDockWidget {
+class ScientificPanel final : public QWidget {
   Q_OBJECT
 public:
   ScientificPanel(AppController *controller, MapCanvas *canvas,
@@ -31,14 +32,23 @@ public:
   void changeSlice(int dimension, int index);
   void advance(int delta = 1);
 
+signals:
+  void activationRequested();
+  void dismissalRequested();
+
+protected:
+  void hideEvent(QHideEvent *event) override;
+
 private:
   void refreshChoices();
   void refreshDimensions();
   void refreshPreview();
-  void refreshCurve();
+  void refreshCurve(bool resetZoom = true);
+  void refreshValues();
   void applyDisplay();
   void updateSource(QVariantMap selection, bool clearCurve);
   QString source() const;
+  void showCurveWindow();
   void exportCsv();
   void exportPng();
   LayerModel *m_layers;
@@ -57,6 +67,8 @@ private:
   QPushButton *m_play;
   QTimer *m_timer;
   QTableWidget *m_values;
+  QComboBox *m_valuesMode;
+  QLabel *m_valuesInfo;
   QPlainTextEdit *m_attributes;
   ScientificPlot *m_chart, *m_histogram;
 };

@@ -482,6 +482,19 @@ bool LayerModel::moveDataset(const QString &datasetId,
     return true;
 }
 
+void LayerModel::clear()
+{
+    if (m_layers.isEmpty())
+        return;
+    beginRemoveRows({}, 0, m_layers.size() - 1);
+    m_layers.clear();
+    endRemoveRows();
+    emit countChanged();
+    emit datasetCountChanged();
+    advanceRevision();
+    emit renderingChanged();
+}
+
 void LayerModel::removeLayer(int row)
 {
     if (row < 0 || row >= m_layers.size())

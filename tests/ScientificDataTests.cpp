@@ -52,6 +52,16 @@ void checkSeries(const QString &path, bool packed, int timeAxis = -2) {
   auto series = ScientificData::series(uri, 2, 1, false);
   auto points = series.value("points").toList();
   check(points.size() == 4, "four time steps");
+  check(series.value("scale").toDouble() == (packed ? .5 : 1) &&
+            series.value("offset").toDouble() == (packed ? 10 : 0),
+        "value table exposes the calibration actually used by the curve");
+  for (const auto &sample : points) {
+    const auto point = sample.toMap();
+    check(point.value("column", -1).toInt() == 2 &&
+              point.value("row", -1).toInt() == 1,
+          "time samples retain the clicked pixel");
+    check(point.contains("raw"), "time samples expose stored values on request");
+  }
   for (int i = 0; i < 4; ++i)
     check(std::abs(points[i].toMap().value("value").toDouble() -
                    ((100 * i + 12) * (packed ? .5 : 1) + (packed ? 10 : 0))) <
@@ -72,6 +82,9 @@ void checkSeries(const QString &path, bool packed, int timeAxis = -2) {
   const auto row =
       ScientificData::series(uri, 2, 1, false, "row").value("points").toList();
   check(row.size() == 5, "row profile length");
+  check(row[4].toMap().value("column").toInt() == 4 &&
+            row[4].toMap().value("row").toInt() == 1,
+        "row profile reports changing columns and a fixed row");
   check(std::abs(row[4].toMap().value("value").toDouble() -
                  (14 * (packed ? .5 : 1) + (packed ? 10 : 0))) < 1e-6,
         "row profile value");
@@ -79,6 +92,9 @@ void checkSeries(const QString &path, bool packed, int timeAxis = -2) {
                           .value("points")
                           .toList();
   check(column.size() == 4, "column profile length");
+  check(column[3].toMap().value("column").toInt() == 2 &&
+            column[3].toMap().value("row").toInt() == 3,
+        "column profile reports a fixed column and changing rows");
   check(std::abs(column[3].toMap().value("value").toDouble() -
                  (32 * (packed ? .5 : 1) + (packed ? 10 : 0))) < 1e-6,
         "column profile value");
@@ -106,6 +122,8 @@ void checkSeries(const QString &path, bool packed, int timeAxis = -2) {
       ScientificData::series(uri, 1, 1, false).value("points").toList();
   check(missing.size() == 4, "missing series size");
   check(missing[2].toMap().value("value").isNull(), "NoData is a gap");
+  check(missing[2].toMap().value("raw").isNull(),
+        "NoData storage sentinel is not shown as a real measurement");
   check(!ScientificData::series(uri, -.01, 1, false)
              .value("error")
              .toString()
