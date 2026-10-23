@@ -83,6 +83,100 @@ def build(version, prefix, jobs, deployment_target):
     print('Runtime ready at '+str(gdal_install))
 
 
+def version_from_header(text):
+    release = re.search(r'#define\s+GDAL_RELEASE_NAME\s+"([^"]+)"', text)
+    if release:
+        return release.group(1)
+    major = re.search(r'#define\s+GDAL_VERSION_MAJOR\s+(\d+)', text)
+    minor = re.search(r'#define\s+GDAL_VERSION_MINOR\s+(\d+)', text)
+    revision = re.search(r'#define\s+GDAL_VERSION_REV\s+(\d+)', text)
+    if major and minor and revision:
+        return f'{major.group(1)}.{minor.group(1)}.{revision.group(1)}'
+    return None
+
+
+def version_from_prefix(prefix):
+    """Read the GDAL ABI version shipped in a vcpkg triplet prefix.
+
+    vcpkg deletes bin/gdal-config, and the installed gdal_version.h may omit
+    GDAL_RELEASE_NAME. Package metadata is the reliable fallback.
+    """
+    prefix = Path(prefix)
+    header_patterns = (
+        'include/gdal_version.h',
+        'include/gdal/gdal_version.h',
+        'include/**/gdal_version.h',
+        'lib/**/Headers/gdal_version.h',
+        'Library/Frameworks/**/Headers/gdal_version.h',
+    )
+    seen = set()
+    for pattern in header_patterns:
+        for header in prefix.glob(pattern):
+            resolved = header.resolve()
+            if resolved in seen or not header.is_file():
+                continue
+            seen.add(resolved)
+            version = version_from_header(header.read_text(encoding='utf-8', errors='replace'))
+            if version:
+                return version
+    for relative in (
+        'share/gdal/GDALConfigVersion.cmake',
+        'lib/cmake/gdal/GDALConfigVersion.cmake',
+        'share/cmake/gdal/GDALConfigVersion.cmake',
+    ):
+        cmake = prefix / relative
+        if cmake.is_file():
+            match = re.search(
+                r'set\(PACKAGE_VERSION\s+"([^"]+)"\)',
+                cmake.read_text(encoding='utf-8', errors='replace'))
+            if match:
+                return match.group(1)
+    for relative in ('lib/pkgconfig/gdal.pc', 'share/pkgconfig/gdal.pc'):
+        pkgconfig = prefix / relative
+        if pkgconfig.is_file():
+            match = re.search(
+                r'(?m)^Version:\s*(\S+)',
+                pkgconfig.read_text(encoding='utf-8', errors='replace'))
+            if match:
+                return match.group(1)
+    status = prefix.parent / 'vcpkg' / 'status'
+    if status.is_file():
+        paragraph = []
+        for line in status.read_text(encoding='utf-8', errors='replace').splitlines() + ['']:
+            if line.strip():
+                paragraph.append(line)
+                continue
+            fields = {}
+            for item in paragraph:
+                if ':' in item:
+                    key, value = item.split(':', 1)
+                    fields[key.strip()] = value.strip()
+            paragraph = []
+            if fields.get('Package') != 'gdal':
+                continue
+            architecture = fields.get('Architecture', '')
+            if architecture and architecture != prefix.name:
+                continue
+            version = fields.get('Version', '').split('#', 1)[0]
+            if version:
+                return version
+    return None
+
+
+def detect_gdal_version(prefix, version=None):
+    if version:
+        return version
+    if prefix:
+        detected = version_from_prefix(prefix)
+        if detected:
+            return detected
+        raise RuntimeError(
+            'Cannot determine the GDAL version in '
+            + str(prefix)
+            + '. Expected include/gdal_version.h, share/gdal/GDALConfigVersion.cmake, or lib/pkgconfig/gdal.pc.')
+    return subprocess.check_output(['gdal-config', '--version'], text=True).strip()
+
+
 def install_runtime(prefix):
     """Replace the private vcpkg GDAL runtime with the matching reduced build.
 
@@ -116,14 +210,7 @@ if __name__ == '__main__':
     parser.add_argument('--deployment-target')
     parser.add_argument('--install-runtime', action='store_true')
     args=parser.parse_args()
-    version=args.version
-    if not version and args.dependency_prefix:
-        prefix=Path(args.dependency_prefix)
-        for header in (prefix/'include/gdal_version.h',prefix/'include/gdal/gdal_version.h'):
-            if header.exists():
-                match=re.search(r'#define\s+GDAL_RELEASE_NAME\s+"([^"]+)"',header.read_text())
-                if match:version=match[1];break
-    if not version:version=subprocess.check_output(['gdal-config','--version'],text=True).strip()
+    version = detect_gdal_version(args.dependency_prefix, args.version)
     build(version,args.dependency_prefix,args.jobs,args.deployment_target)
     if args.install_runtime:
         if not args.dependency_prefix: raise RuntimeError('--install-runtime requires --dependency-prefix')

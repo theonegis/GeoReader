@@ -187,7 +187,9 @@ jobs:
         run: |
           installed="$GITHUB_WORKSPACE/vcpkg_installed"
           export GEOREADER_VCPKG_RUNTIME_ROOT="$installed/${{ matrix.triplet }}"
-          python3 scripts/build_minimal_gdal.py --deployment-target 15.0
+          python3 scripts/build_minimal_gdal.py \
+            --dependency-prefix "$installed/${{ matrix.triplet }}" \
+            --deployment-target 15.0
           export GEOREADER_GDAL_PREFIX="$PWD/.test-deps/gdal-minimal"
           ./scripts/build.sh --type Release --clean-first --package --package-format dmg -- \
             -DCMAKE_OSX_ARCHITECTURES=${{ matrix.architecture }} \
@@ -442,14 +444,16 @@ jobs:
 
           input_dir="$(dirname "$geojson_plugin")"
           missing=0
-          for plugin in geojson.input raster.input shape.input; do
+          for plugin in geojson.input shape.input; do
             if [[ ! -f "$input_dir/$plugin" ]]; then
               echo "::error title=Incomplete vcpkg Mapnik::Missing $plugin" >&2
               missing=1
             fi
           done
+          # Mapnik 4 combines raster and OGR into gdal+ogr.input.
+          # Older builds shipped gdal.input, ogr.input, and raster.input separately.
           if [[ ! -f "$input_dir/gdal+ogr.input" ]]; then
-            for plugin in gdal.input ogr.input; do
+            for plugin in gdal.input ogr.input raster.input; do
               if [[ ! -f "$input_dir/$plugin" ]]; then
                 echo "::error title=Incomplete vcpkg Mapnik::Missing $plugin" >&2
                 missing=1

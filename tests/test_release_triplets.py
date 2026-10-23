@@ -361,6 +361,8 @@ class ReleaseTripletTests(unittest.TestCase):
             "Incomplete ${package_name} package",
             "Verify vcpkg Mapnik input plugins",
             "Incomplete vcpkg Mapnik",
+            "for plugin in geojson.input shape.input",
+            "Mapnik 4 combines raster and OGR into gdal+ogr.input.",
             "Prepare relocatable vcpkg runtime",
             "patchelf --set-rpath '$ORIGIN'",
             "patchelf --set-rpath '$ORIGIN/../..'",
