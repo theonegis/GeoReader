@@ -330,12 +330,15 @@ jobs:
           if (-not $installer) { throw 'Windows installer not found.' }
           $installDir = "$env:RUNNER_TEMP/GeoReader"
           $setup = Start-Process -FilePath $installer.FullName `
-            -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
+            -ArgumentList "/S /D=$installDir" -Wait -PassThru
           if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
-          $app = Join-Path $installDir 'bin/GeoReader.exe'
-          if (-not (Test-Path $app)) { $app = Join-Path $installDir 'GeoReader.exe' }
-          if (-not (Test-Path $app)) { throw 'Installed GeoReader.exe not found.' }
-          $check = Start-Process -FilePath $app -ArgumentList @(
+          $app = Get-ChildItem -Path $installDir -Recurse `
+            -Filter 'GeoReader.exe' -File | Select-Object -First 1
+          if (-not $app) {
+            Get-ChildItem -Path $installDir -Recurse | Select-Object FullName
+            throw "Installed GeoReader.exe not found below $installDir."
+          }
+          $check = Start-Process -FilePath $app.FullName -ArgumentList @(
             '--runtime-check',
             "$env:GITHUB_WORKSPACE/tests/data/netcdf4.nc",
             "$env:GITHUB_WORKSPACE/tests/data/scientific.h5",

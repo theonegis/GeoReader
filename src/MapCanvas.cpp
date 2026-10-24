@@ -1,6 +1,7 @@
 #include "MapCanvas.h"
 #include "RasterRenderer.h"
 #include "UiTypography.h"
+#include "VectorLabelRenderer.h"
 
 #include <QCursor>
 #include <QDateTime>
@@ -1403,20 +1404,22 @@ RenderResult MapCanvas::renderLayers(QVector<LayerSnapshot> layers,
                 continue;
             if (layer.type == QStringLiteral("vector")) {
                 const QString styleName = QStringLiteral("layer_style");
-                const QString opacity =
-                    QString::number(layer.opacity, 'f', 3);
                 QString symbolizers;
                 if (layer.geometryType == QStringLiteral("polygon")) {
                     symbolizers += QStringLiteral(
                         "<PolygonSymbolizer fill=\"%1\" "
                         "fill-opacity=\"%2\"/>")
-                        .arg(layer.fillColor.name(QColor::HexRgb), opacity);
+                        .arg(layer.fillColor.name(QColor::HexRgb),
+                             QString::number(VectorLabelRenderer::combinedOpacity(
+                                 layer.fillColor, layer.opacity), 'f', 3));
                 }
                 if (layer.geometryType == QStringLiteral("point")) {
                     symbolizers += QStringLiteral(
                         "<DotSymbolizer fill=\"%1\" opacity=\"%2\" "
                         "width=\"8\" height=\"8\"/>")
-                        .arg(layer.fillColor.name(QColor::HexRgb), opacity);
+                        .arg(layer.fillColor.name(QColor::HexRgb),
+                             QString::number(VectorLabelRenderer::combinedOpacity(
+                                 layer.fillColor, layer.opacity), 'f', 3));
                 } else {
                     symbolizers += QStringLiteral(
                         "<LineSymbolizer stroke=\"%1\" stroke-width=\"%2\" "
@@ -1424,7 +1427,8 @@ RenderResult MapCanvas::renderLayers(QVector<LayerSnapshot> layers,
                         "stroke-linejoin=\"round\"/>")
                         .arg(layer.lineColor.name(QColor::HexRgb),
                              QString::number(layer.lineWidth, 'f', 2),
-                             opacity);
+                             QString::number(VectorLabelRenderer::combinedOpacity(
+                                 layer.lineColor, layer.opacity), 'f', 3));
                 }
                 const QString style = QStringLiteral(
                     "<Style name=\"%1\"><Rule>%2</Rule></Style>")
@@ -1458,6 +1462,8 @@ RenderResult MapCanvas::renderLayers(QVector<LayerSnapshot> layers,
                 painter.setCompositionMode(
                     QPainter::CompositionMode_SourceOver);
                 painter.drawImage(QPoint(0, 0), vectorImage);
+                painter.end();
+                (void)VectorLabelRenderer::draw(result.image, layer, viewport);
             } else if (layer.type == QStringLiteral("raster")) {
                 const auto raster = renderRasterLayer(
                     layer,

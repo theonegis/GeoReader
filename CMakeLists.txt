@@ -263,6 +263,8 @@ qt_add_executable(GeoReader
     src/MultidimensionalDataset.h
     src/RasterRenderer.cpp
     src/RasterRenderer.h
+    src/VectorLabelRenderer.cpp
+    src/VectorLabelRenderer.h
 )
 
 set(GEOREADER_GDAL_PLUGIN_DIR "" CACHE PATH "Additional GDAL scientific plugins")
@@ -330,6 +332,8 @@ if(GEOREADER_BUILD_TESTS)
         src/MapCanvas.h
         src/RasterRenderer.cpp
         src/RasterRenderer.h
+        src/VectorLabelRenderer.cpp
+        src/VectorLabelRenderer.h
     )
     target_include_directories(GeoReaderInteractionTests PRIVATE src)
     target_compile_definitions(GeoReaderInteractionTests PRIVATE
@@ -349,6 +353,22 @@ if(GEOREADER_BUILD_TESTS)
     )
     add_test(NAME GeoReaderInteractionTests COMMAND GeoReaderInteractionTests)
     set_tests_properties(GeoReaderInteractionTests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    qt_add_executable(GeoReaderVectorLabelTests
+        tests/VectorLabelRendererTests.cpp
+        src/LayerModel.cpp
+        src/LayerModel.h
+        src/VectorLabelRenderer.cpp
+        src/VectorLabelRenderer.h
+    )
+    target_include_directories(GeoReaderVectorLabelTests PRIVATE src)
+    target_compile_definitions(GeoReaderVectorLabelTests PRIVATE
+        GEOREADER_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+    target_link_libraries(GeoReaderVectorLabelTests PRIVATE
+        Qt6::Core Qt6::Gui Qt6::Network Qt6::Widgets GDAL::GDAL)
+    add_test(NAME GeoReaderVectorLabelTests COMMAND GeoReaderVectorLabelTests)
+    set_tests_properties(GeoReaderVectorLabelTests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
     qt_add_executable(GeoReaderMultidimensionalTests

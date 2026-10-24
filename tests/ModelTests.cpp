@@ -185,6 +185,33 @@ int main(int argc, char **argv)
         return 6;
     }
 
+    LayerSnapshot styledVector;
+    styledVector.name = QStringLiteral("styled-vector");
+    styledVector.type = QStringLiteral("vector");
+    styledVector.geometryType = QStringLiteral("polygon");
+    layers.addLayer(styledVector);
+    const QColor opaqueOutline(20, 40, 60, 255);
+    const QColor translucentFill(80, 100, 120, 48);
+    layers.setVectorStyle(5, opaqueOutline, translucentFill, 2.5);
+    layers.setVectorLabel(5, true, QStringLiteral(" label "),
+                          QStringLiteral("Noto Sans CJK SC"), 14,
+                          QStringLiteral("interior"));
+    const QVariantMap vectorStyle = layers.get(5);
+    if (!expect(vectorStyle.value(QStringLiteral("lineColor")).value<QColor>().alpha() == 255
+                    && vectorStyle.value(QStringLiteral("fillColor")).value<QColor>().alpha() == 48,
+                "Vector colors did not retain independent alpha")
+        || !expect(vectorStyle.value(QStringLiteral("labelEnabled")).toBool()
+                       && vectorStyle.value(QStringLiteral("labelField")).toString()
+                              == QStringLiteral("label")
+                       && vectorStyle.value(QStringLiteral("labelFontFamily")).toString()
+                              == QStringLiteral("Noto Sans CJK SC")
+                       && vectorStyle.value(QStringLiteral("labelFontSize")).toInt() == 14
+                       && vectorStyle.value(QStringLiteral("labelPlacement")).toString()
+                              == QStringLiteral("interior"),
+                   "Vector label properties were not normalized or exposed")) {
+        return 34;
+    }
+
     AttributeTableModel table(&layers);
     if (!expect(table.loadLayer(3), "Attribute table could not be loaded")
         || !expect(table.rowCount() == 3, "Unexpected attribute row count")
@@ -246,6 +273,66 @@ int main(int argc, char **argv)
                     == QStringLiteral("multi_layers · stations"),
                 "Vector identify selected the wrong GeoPackage child layer")) {
         return 13;
+    }
+    if (!expect(controller.vectorFields(1).contains(QStringLiteral("label")),
+                "Vector label field catalog is unavailable")) {
+        return 35;
+    }
+
+    AppController multidimensional;
+    multidimensional.loadFiles(
+        {QStringLiteral(GEOREADER_TEST_DATA_DIR "/netcdf4.nc")});
+    const QVariantList catalog = multidimensional.pendingMultidimensionalImport()
+                                     .value(QStringLiteral("arrays")).toList();
+    QVariantList selections;
+    for (int index = 0; index < catalog.size(); ++index) {
+        const QVariantMap array = catalog.at(index).toMap();
+        if (array.value(QStringLiteral("name")).toString() != QStringLiteral("temperature")
+            && array.value(QStringLiteral("name")).toString() != QStringLiteral("quality")) {
+            continue;
+        }
+        QVariantList slices;
+        for (const auto &unused : array.value(QStringLiteral("dimensions")).toList()) {
+            Q_UNUSED(unused);
+            slices.push_back(0);
+        }
+        selections.push_back(QVariantMap{
+            {QStringLiteral("arrayIndex"), index},
+            {QStringLiteral("xDimension"), array.value(QStringLiteral("defaultXDimension"))},
+            {QStringLiteral("yDimension"), array.value(QStringLiteral("defaultYDimension"))},
+            {QStringLiteral("sliceIndices"), slices},
+            {QStringLiteral("coordinateMode"), QStringLiteral("geographic")},
+            {QStringLiteral("crs"), QStringLiteral("EPSG:4326")}});
+    }
+    if (!expect(selections.size() == 2, "Batch import fixture variables missing"))
+        return 36;
+    QEventLoop batchLoop;
+    QTimer batchTimeout;
+    batchTimeout.setSingleShot(true);
+    QObject::connect(&batchTimeout, &QTimer::timeout,
+                     &batchLoop, &QEventLoop::quit);
+    QObject::connect(&multidimensional,
+                     &AppController::multidimensionalImportBusyChanged,
+                     &batchLoop, [&] {
+        if (!multidimensional.multidimensionalImportBusy())
+            batchLoop.quit();
+    });
+    multidimensional.confirmMultidimensionalImports(selections);
+    batchTimeout.start(15000);
+    if (multidimensional.multidimensionalImportBusy())
+        batchLoop.exec();
+    const LayerModel *imported = multidimensional.layerModel();
+    if (!expect(!multidimensional.multidimensionalImportBusy()
+                    && imported->count() == 2,
+                "Two selected scientific variables were not imported")
+        || !expect(imported->layerAt(0)->datasetId == imported->layerAt(1)->datasetId
+                       && imported->layerAt(0)->visible
+                       && imported->layerAt(1)->visible,
+                   "Scientific siblings do not share a visible dataset group")
+        || !expect(imported->layerAt(0)->multidimensionalArray
+                       != imported->layerAt(1)->multidimensionalArray,
+                   "Batch import duplicated one scientific variable")) {
+        return 37;
     }
 
     packageLayers->moveLayer(1, 0);

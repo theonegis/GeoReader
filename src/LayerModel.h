@@ -25,6 +25,11 @@ struct LayerSnapshot
     QColor lineColor = QColor(QStringLiteral("#1976D2"));
     QColor fillColor = QColor(QStringLiteral("#64B5F6"));
     double lineWidth = 1.5;
+    bool labelEnabled = false;
+    QString labelField;
+    QString labelFontFamily;
+    int labelFontSize = 12;
+    QString labelPlacement = QStringLiteral("center");
     int bandCount = 0;
     int pixelWidth = 0;
     int pixelHeight = 0;
@@ -66,6 +71,11 @@ public:
         LineColorRole,
         FillColorRole,
         LineWidthRole,
+        LabelEnabledRole,
+        LabelFieldRole,
+        LabelFontFamilyRole,
+        LabelFontSizeRole,
+        LabelPlacementRole,
         BandCountRole,
         RedBandRole,
         GreenBandRole,
@@ -111,6 +121,10 @@ public:
     Q_INVOKABLE void setOpacity(int row, double opacity);
     Q_INVOKABLE void setVectorStyle(int row, const QColor &lineColor,
                                     const QColor &fillColor, double lineWidth);
+    Q_INVOKABLE void setVectorLabel(int row, bool enabled,
+                                    const QString &field,
+                                    const QString &fontFamily, int fontSize,
+                                    const QString &placement);
     Q_INVOKABLE void setRasterStyle(int row, const QString &mode, int redBand,
                                     int greenBand, int blueBand, int grayBand,
                                     const QString &colorRamp,

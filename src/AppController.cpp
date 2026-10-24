@@ -39,6 +39,14 @@ struct OgrTransformDeleter {
 using OgrTransformPtr = std::unique_ptr<OGRCoordinateTransformation,
                                         OgrTransformDeleter>;
 
+struct PendingArrayImport {
+    MultidimensionalArray array;
+    MultidimensionalImportSpec spec;
+    QString normalizedMode;
+    QStringList sliceLabels;
+    PreparedMultidimensionalRaster prepared;
+};
+
 constexpr auto kOrganization = "GeoReader";
 constexpr auto kApplication = "GeoReader";
 
@@ -806,116 +814,159 @@ void AppController::confirmMultidimensionalImport(
     const QVariantList &sliceIndices, const QString &coordinateMode,
     const QString &crs)
 {
-    if (m_multidimensionalImportBusy
-        || arrayIndex < 0
-        || arrayIndex >= m_pendingMultidimensionalImport.arrays.size()) {
-        return;
-    }
+    confirmMultidimensionalImports({QVariantMap{
+        {QStringLiteral("arrayIndex"), arrayIndex},
+        {QStringLiteral("xDimension"), xDimension},
+        {QStringLiteral("yDimension"), yDimension},
+        {QStringLiteral("sliceIndices"), sliceIndices},
+        {QStringLiteral("coordinateMode"), coordinateMode},
+        {QStringLiteral("crs"), crs}}});
+}
 
-    const MultidimensionalArray array =
-        m_pendingMultidimensionalImport.arrays.at(arrayIndex);
-    if (xDimension < 0 || yDimension < 0 || xDimension == yDimension
-        || xDimension >= array.dimensions.size()
-        || yDimension >= array.dimensions.size()) {
-        setStatus(tr("请选择两个不同的 X/Y 维"));
+void AppController::confirmMultidimensionalImports(const QVariantList &selections)
+{
+    if (m_multidimensionalImportBusy || selections.isEmpty())
         return;
-    }
-
     static const QSet<QString> modes {
         QStringLiteral("auto"), QStringLiteral("geographic"),
         QStringLiteral("projected"), QStringLiteral("pixel")
     };
-    const QString normalizedMode = modes.contains(coordinateMode)
-        ? coordinateMode : QStringLiteral("auto");
-    if (normalizedMode == QStringLiteral("projected")
-        && crs.trimmed().isEmpty() && array.crs.isEmpty()) {
-        setStatus(tr("投影坐标模式必须指定源 CRS（例如 EPSG:32648）"));
-        return;
+    QVector<PendingArrayImport> requests;
+    requests.reserve(selections.size());
+    for (const QVariant &value : selections) {
+        const QVariantMap selection = value.toMap();
+        const int arrayIndex = selection.value(QStringLiteral("arrayIndex"), -1).toInt();
+        if (arrayIndex < 0 || arrayIndex >= m_pendingMultidimensionalImport.arrays.size())
+            continue;
+        PendingArrayImport request;
+        request.array = m_pendingMultidimensionalImport.arrays.at(arrayIndex);
+        const int xDimension = selection.value(QStringLiteral("xDimension"), -1).toInt();
+        const int yDimension = selection.value(QStringLiteral("yDimension"), -1).toInt();
+        if (xDimension < 0 || yDimension < 0 || xDimension == yDimension
+            || xDimension >= request.array.dimensions.size()
+            || yDimension >= request.array.dimensions.size()) {
+            setStatus(tr("变量 %1 需要两个不同的 X/Y 维").arg(request.array.name));
+            return;
+        }
+        const QString requestedMode = selection.value(
+            QStringLiteral("coordinateMode"), QStringLiteral("auto")).toString();
+        request.normalizedMode = modes.contains(requestedMode)
+            ? requestedMode : QStringLiteral("auto");
+        const QString requestedCrs = selection.value(QStringLiteral("crs")).toString().trimmed();
+        if (request.normalizedMode == QStringLiteral("projected")
+            && requestedCrs.isEmpty() && request.array.crs.isEmpty()) {
+            setStatus(tr("变量 %1 的投影坐标模式必须指定源 CRS")
+                          .arg(request.array.name));
+            return;
+        }
+        request.spec.path = m_pendingMultidimensionalImport.path;
+        request.spec.arrayFullName = request.array.fullName;
+        request.spec.sourceUri = request.array.sourceUri;
+        request.spec.coordinateMode = request.normalizedMode;
+        request.spec.crs = requestedCrs.isEmpty() ? request.array.crs : requestedCrs;
+        request.spec.xDimension = xDimension;
+        request.spec.yDimension = yDimension;
+        request.spec.sliceIndices.resize(request.array.dimensions.size());
+        const QVariantList sliceIndices = selection.value(
+            QStringLiteral("sliceIndices")).toList();
+        for (int index = 0; index < request.array.dimensions.size(); ++index) {
+            const auto &dimension = request.array.dimensions.at(index);
+            request.spec.dimensionSizes.push_back(dimension.size);
+            quint64 slice = index < sliceIndices.size()
+                ? sliceIndices.at(index).toULongLong() : 0;
+            if (dimension.size > 0)
+                slice = std::min(slice, dimension.size - 1);
+            if (index == xDimension || index == yDimension)
+                slice = 0;
+            else
+                request.sliceLabels.push_back(
+                    QStringLiteral("%1=%2").arg(dimension.name).arg(slice));
+            request.spec.sliceIndices[index] = slice;
+        }
+        requests.push_back(std::move(request));
     }
-
-    MultidimensionalImportSpec spec;
-    spec.path = m_pendingMultidimensionalImport.path;
-    spec.arrayFullName = array.fullName;
-    spec.sourceUri = array.sourceUri;
-    spec.coordinateMode = normalizedMode;
-    spec.crs = crs.trimmed().isEmpty() ? array.crs : crs.trimmed();
-    spec.xDimension = xDimension;
-    spec.yDimension = yDimension;
-    spec.sliceIndices.resize(array.dimensions.size());
-    spec.dimensionSizes.reserve(array.dimensions.size());
-    for (const auto &dimension : array.dimensions)
-        spec.dimensionSizes.push_back(dimension.size);
-    QStringList sliceLabels;
-    for (int index = 0; index < array.dimensions.size(); ++index) {
-        quint64 value = index < sliceIndices.size()
-            ? sliceIndices.at(index).toULongLong() : 0;
-        const quint64 size = array.dimensions.at(index).size;
-        if (size > 0)
-            value = std::min(value, size - 1);
-        if (index == xDimension || index == yDimension)
-            value = 0;
-        else
-            sliceLabels.push_back(
-                QStringLiteral("%1=%2")
-                    .arg(array.dimensions.at(index).name)
-                    .arg(value));
-        spec.sliceIndices[index] = value;
+    if (requests.isEmpty()) {
+        setStatus(tr("请至少选择一个可显示的变量"));
+        return;
     }
 
     m_multidimensionalImportBusy = true;
     emit multidimensionalImportBusyChanged();
-    setStatus(tr("正在建立变量视图：%1").arg(array.fullName));
-
-    const MultidimensionalScanResult pending =
-        m_pendingMultidimensionalImport;
-    auto *watcher =
-        new QFutureWatcher<PreparedMultidimensionalRaster>(this);
-    connect(watcher, &QFutureWatcher<PreparedMultidimensionalRaster>::finished,
-            this, [this, watcher, pending, array, normalizedMode,
-                   sliceLabels] {
-        const PreparedMultidimensionalRaster prepared = watcher->result();
+    setStatus(tr("正在建立 %1 个变量视图").arg(requests.size()));
+    const MultidimensionalScanResult pending = m_pendingMultidimensionalImport;
+    auto *watcher = new QFutureWatcher<QVector<PendingArrayImport>>(this);
+    connect(watcher, &QFutureWatcher<QVector<PendingArrayImport>>::finished,
+            this, [this, watcher, pending] {
+        const QVector<PendingArrayImport> results = watcher->result();
         watcher->deleteLater();
         m_multidimensionalImportBusy = false;
         emit multidimensionalImportBusyChanged();
-        if (!prepared.isValid()) {
-            setStatus(tr("多维变量加载失败：%1").arg(prepared.error));
+        QString commonMode;
+        for (const auto &result : results) {
+            if (!result.prepared.isValid())
+                continue;
+            const QString effective = result.normalizedMode == QStringLiteral("pixel")
+                    || !result.prepared.hasGeoreference
+                ? QStringLiteral("pixel") : QStringLiteral("geographic");
+            if (commonMode.isEmpty())
+                commonMode = effective;
+            else if (commonMode != effective) {
+                setStatus(tr("所选变量混合了地理坐标和像素坐标，无法同时显示"));
+                return;
+            }
+        }
+        if (commonMode.isEmpty()) {
+            const QString error = results.isEmpty()
+                ? tr("没有可导入的变量") : results.first().prepared.error;
+            setStatus(tr("多维变量加载失败：%1").arg(error));
             return;
         }
-
+        if (!ensureCoordinateContext(commonMode, pending.path))
+            return;
         QString datasetId;
-        for (const auto &existing : m_layerModel.snapshots()) {
-            if (QFileInfo(existing.path).absoluteFilePath()
-                == QFileInfo(pending.path).absoluteFilePath()) {
+        const QString canonicalPath = QFileInfo(pending.path).absoluteFilePath();
+        for (const LayerSnapshot &existing : m_layerModel.snapshots()) {
+            if (QFileInfo(existing.path).absoluteFilePath() == canonicalPath) {
                 datasetId = existing.datasetId;
                 break;
             }
         }
-        if (datasetId.isEmpty()) {
-            datasetId =
-                QUuid::createUuid().toString(QUuid::WithoutBraces);
+        if (datasetId.isEmpty())
+            datasetId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        int imported = 0;
+        QStringList failures;
+        for (const auto &result : results) {
+            if (!result.prepared.isValid()) {
+                failures.push_back(result.array.name + QStringLiteral(": ")
+                                   + result.prepared.error);
+                continue;
+            }
+            const QString layerName = result.sliceLabels.isEmpty()
+                ? result.array.name
+                : QStringLiteral("%1 [%2]").arg(
+                      result.array.name,
+                      result.sliceLabels.join(QStringLiteral(", ")));
+            addRasterLayer(pending.path, datasetId,
+                           QFileInfo(pending.path).completeBaseName(),
+                           result.prepared.sourceUri, layerName, commonMode,
+                           result.array.fullName,
+                           result.sliceLabels.join(QStringLiteral(", ")));
+            ++imported;
         }
-        const QString effectiveMode =
-            normalizedMode == QStringLiteral("pixel")
-                || !prepared.hasGeoreference
-            ? QStringLiteral("pixel")
-            : QStringLiteral("geographic");
-        const QString layerName = sliceLabels.isEmpty()
-            ? array.name
-            : QStringLiteral("%1 [%2]")
-                  .arg(array.name, sliceLabels.join(QStringLiteral(", ")));
-        addRasterLayer(
-            pending.path, datasetId,
-            QFileInfo(pending.path).completeBaseName(), prepared.sourceUri,
-            layerName, effectiveMode, array.fullName,
-            sliceLabels.join(QStringLiteral(", ")));
-
         m_pendingMultidimensionalImport = {};
         emit pendingMultidimensionalImportChanged();
+        setStatus(failures.isEmpty()
+            ? tr("已加载 %1 个变量图层").arg(imported)
+            : tr("已加载 %1 个变量；%2 个失败：%3")
+                  .arg(imported).arg(failures.size()).arg(failures.join(QStringLiteral("；"))));
     });
-    watcher->setFuture(QtConcurrent::run(
-        [spec] {
-            return MultidimensionalDatasetInspector::prepareRasterView(spec);
-        }));
+    watcher->setFuture(QtConcurrent::run([requests]() mutable {
+        for (auto &request : requests) {
+            request.prepared =
+                MultidimensionalDatasetInspector::prepareRasterView(request.spec);
+        }
+        return requests;
+    }));
 }
 
 void AppController::cancelMultidimensionalImport()
@@ -1084,6 +1135,33 @@ QVariantMap AppController::queryVector(int row, double longitude, double latitud
         {QStringLiteral("fields"), fields},
         {QStringLiteral("geometryWkt"), geometryWkt}
     };
+}
+
+QStringList AppController::vectorFields(int row) const
+{
+    const LayerSnapshot *layer = m_layerModel.layerAt(row);
+    if (!layer || layer->type != QStringLiteral("vector"))
+        return {};
+    GdalDatasetPtr dataset(
+        static_cast<GDALDataset *>(GDALOpenEx(layer->path.toUtf8().constData(),
+                                              GDAL_OF_VECTOR | GDAL_OF_READONLY,
+                                              nullptr, nullptr, nullptr)),
+        GDALClose);
+    if (!dataset)
+        return {};
+    OGRLayer *source = layer->sourceLayer.isEmpty()
+        ? dataset->GetLayer(0)
+        : dataset->GetLayerByName(layer->sourceLayer.toUtf8().constData());
+    OGRFeatureDefn *definition = source ? source->GetLayerDefn() : nullptr;
+    if (!definition)
+        return {};
+    QStringList fields;
+    fields.reserve(definition->GetFieldCount());
+    for (int index = 0; index < definition->GetFieldCount(); ++index) {
+        if (const OGRFieldDefn *field = definition->GetFieldDefn(index))
+            fields.push_back(QString::fromUtf8(field->GetNameRef()));
+    }
+    return fields;
 }
 
 QVariantMap AppController::layerMetadata(int row) const

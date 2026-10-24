@@ -8,6 +8,35 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class CMakeLayoutTests(unittest.TestCase):
+
+    def test_local_copyright_material_and_readme_screenshot(self) -> None:
+        ignore = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8")
+        readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn("/docs/软件著作权/", ignore)
+        self.assertIn("docs/images/main.png", readme)
+        self.assertNotIn("docs/images/scientific-view.png", readme)
+
+    def test_cross_platform_runtime_packaging_guards(self) -> None:
+        closure = (PROJECT_ROOT / "cmake" / "InstallRuntimeClosure.cmake.in").read_text(
+            encoding="utf-8"
+        )
+        macos_bundle = (PROJECT_ROOT / "scripts" / "bundle_macos.py").read_text(
+            encoding="utf-8"
+        )
+        workflow = (PROJECT_ROOT / ".github" / "workflows" / "package.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("_mapnik_runtime_roots", closure)
+        self.assertIn("LIBRARIES ${_mapnik_runtime_roots}", closure)
+        self.assertIn("file(REAL_PATH", closure)
+        self.assertIn("xattr', '-cr'", macos_bundle)
+        self.assertIn("--timestamp=none", macos_bundle)
+        self.assertIn("def checked_run", macos_bundle)
+        self.assertIn("Get-ChildItem -Path $installDir -Recurse", workflow)
+        self.assertIn('-ArgumentList "/S /D=$installDir"', workflow)
+
     def test_native_widgets_shell_uses_pinned_qlementine(self) -> None:
         cmake_source = (PROJECT_ROOT / "CMakeLists.txt").read_text(
             encoding="utf-8"
@@ -55,12 +84,13 @@ class CMakeLayoutTests(unittest.TestCase):
         )
 
         self.assertIn("new FrostedToolBar(m_canvas, m_mapHost)", main_window)
-        self.assertIn("m_panelFrame = new FloatingPanelFrame(m_mapHost)", main_window)
+        self.assertIn("auto *floatingFrame = new FloatingPanelFrame(m_mapHost)", main_window)
         self.assertIn("floatingPanelClose", main_window)
         self.assertIn("dataMapSeparator", main_window)
         self.assertIn("mapSettingsSeparator", main_window)
         self.assertIn("source.width() / 9", main_window)
-        self.assertIn("QTimer::singleShot(0, this, [handler, from, to]", main_window)
+        self.assertIn("class LayerTreeWidget final : public QTreeWidget", main_window)
+        self.assertIn("scientific-group", (PROJECT_ROOT / "tests" / "ScientificUiTests.cpp").read_text(encoding="utf-8"))
         self.assertIn("m_selectedVectorLayer = remappedIndex", main_window)
         self.assertIn("m_emptyState = new QWidget(m_mapHost)", main_window)
         self.assertIn("coordinateBadge", main_window)

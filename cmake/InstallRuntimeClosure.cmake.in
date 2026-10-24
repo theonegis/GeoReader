@@ -6,8 +6,22 @@ set(_prefix "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
 set(_root "@GEOREADER_VCPKG_RUNTIME_ROOT@")
 set(_executable "${_prefix}/@CMAKE_INSTALL_BINDIR@/GeoReader@CMAKE_EXECUTABLE_SUFFIX@")
 file(GLOB _plugins "${_prefix}/@GEOREADER_MAPNIK_PLUGIN_INSTALL_DIR@/*")
+# Mapnik input plugins link to the Mapnik core library.  Treat that library as
+# an explicit dependency root as well as a resolved dependency: CMake does not
+# include root libraries in RESOLVED_DEPENDENCIES_VAR, and some ELF scanners do
+# not reliably walk a MODULE's transitive closure when its install RPATH has
+# already been rewritten.
+if(WIN32)
+    file(GLOB _mapnik_runtime_roots "${_root}/bin/mapnik*.dll")
+else()
+    file(GLOB _mapnik_runtime_roots "${_root}/lib/libmapnik.so*")
+endif()
+if(NOT _mapnik_runtime_roots)
+    message(FATAL_ERROR "Mapnik runtime library not found below ${_root}")
+endif()
 file(GET_RUNTIME_DEPENDENCIES
     EXECUTABLES "${_executable}"
+    LIBRARIES ${_mapnik_runtime_roots}
     MODULES ${_plugins}
     DIRECTORIES "${_root}/bin" "${_root}/lib" "@GEOREADER_QT_RUNTIME_DIR@"
     RESOLVED_DEPENDENCIES_VAR _resolved
@@ -24,10 +38,14 @@ else()
     set(_destination "${_prefix}/@CMAKE_INSTALL_LIBDIR@/georeader")
 endif()
 set(_manifest "")
-foreach(_library IN LISTS _resolved)
+set(_runtime_libraries ${_mapnik_runtime_roots} ${_resolved})
+list(REMOVE_DUPLICATES _runtime_libraries)
+file(REAL_PATH "${_root}" _root_real)
+foreach(_library IN LISTS _runtime_libraries)
     # Qt deploy handles Qt and platform libraries. Only the resolved vcpkg
     # closure belongs here; system libraries stay supplied by the target OS.
-    cmake_path(IS_PREFIX _root "${_library}" NORMALIZE _is_vcpkg)
+    file(REAL_PATH "${_library}" _library_real)
+    cmake_path(IS_PREFIX _root_real "${_library_real}" NORMALIZE _is_vcpkg)
     if(_is_vcpkg)
         file(INSTALL "${_library}" DESTINATION "${_destination}" TYPE SHARED_LIBRARY FOLLOW_SYMLINK_CHAIN)
         get_filename_component(_name "${_library}" NAME)

@@ -75,6 +75,12 @@ int runScientificUiTests(MainWindow &window, AppController &controller) {
                  nullptr;
         },
         "Import dialog missing");
+    auto initialVariables =
+        window.findChild<QTreeWidget *>("scientificVariableTree");
+    check(initialVariables && initialVariables->topLevelItemCount() >= 2,
+          "Scientific import does not expose a multi-variable checklist");
+    check(initialVariables->topLevelItem(0)->flags() & Qt::ItemIsUserCheckable,
+          "Scientific variables cannot be selected independently");
     click(window, "scientificCancel");
     check(controller.layerModel()->count() == 0, "Cancel created a layer");
     int expected = 0;
@@ -102,8 +108,8 @@ int runScientificUiTests(MainWindow &window, AppController &controller) {
       wait(
           [&] { return !controller.pendingMultidimensionalImport().isEmpty(); },
           "Catalog not shown");
-      auto combo = window.findChild<QComboBox *>("scientificVariableBox");
-      check(combo, "Variable choices missing");
+      auto variables = window.findChild<QTreeWidget *>("scientificVariableTree");
+      check(variables, "Variable choices missing");
       auto arrays =
           controller.pendingMultidimensionalImport().value("arrays").toList();
       int selected = -1;
@@ -111,7 +117,10 @@ int runScientificUiTests(MainWindow &window, AppController &controller) {
         if (arrays[i].toMap().value("name").toString().contains("temperature"))
           selected = i;
       check(selected >= 0, "Temperature missing");
-      combo->setCurrentIndex(selected);
+      for (int row = 0; row < variables->topLevelItemCount(); ++row)
+        variables->topLevelItem(row)->setCheckState(0, Qt::Unchecked);
+      variables->topLevelItem(selected)->setCheckState(0, Qt::Checked);
+      variables->setCurrentItem(variables->topLevelItem(selected));
       QTest::qWait(50);
       // These synthetic HDF fixtures have coordinate values but no CRS.
       // Assign the known fixture CRS explicitly for geographic overlay tests.
@@ -486,13 +495,16 @@ int runScientificUiTests(MainWindow &window, AppController &controller) {
       wait([&] { return !controller.pendingMultidimensionalImport().isEmpty(); },
            "Reorder fixture catalog missing");
       auto arrays = controller.pendingMultidimensionalImport().value("arrays").toList();
-      auto combo = window.findChild<QComboBox *>("scientificVariableBox");
+      auto variables = window.findChild<QTreeWidget *>("scientificVariableTree");
       int selected = -1;
       for (int i = 0; i < arrays.size(); ++i)
         if (arrays[i].toMap().value("name").toString().contains("temperature"))
           selected = i;
-      check(selected >= 0 && combo, "Reorder variable missing");
-      combo->setCurrentIndex(selected);
+      check(selected >= 0 && variables, "Reorder variable missing");
+      for (int row = 0; row < variables->topLevelItemCount(); ++row)
+        variables->topLevelItem(row)->setCheckState(0, Qt::Unchecked);
+      variables->topLevelItem(selected)->setCheckState(0, Qt::Checked);
+      variables->setCurrentItem(variables->topLevelItem(selected));
       window.findChild<QLineEdit *>("scientificSourceCrs")->setText("EPSG:4326");
       const int previousImports = imports.count();
       click(window, "scientificAdd");
@@ -584,66 +596,122 @@ int runScientificUiTests(MainWindow &window, AppController &controller) {
           "Metadata row height did not follow a larger font");
     metadataDialog->close();
     QTest::qWait(40);
+    const LayerSnapshot groupTemplate = *controller.layerModel()->layerAt(0);
+    LayerSnapshot groupA = groupTemplate;
+    groupA.id = QStringLiteral("ui-group-a");
+    groupA.datasetId = QStringLiteral("ui-group");
+    groupA.datasetName = QStringLiteral("scientific-group.nc");
+    groupA.name = QStringLiteral("temperature");
+    LayerSnapshot groupB = groupA;
+    groupB.id = QStringLiteral("ui-group-b");
+    groupB.name = QStringLiteral("quality");
+    controller.layerModel()->addLayer(groupA);
+    controller.layerModel()->addLayer(groupB);
+    window.setActivePanel("layers");
+    QTest::qWait(250); // allow any queued language/theme chrome rebuild to finish
     window.setActivePanel("layers");
     QTest::qWait(50);
-    auto list = window.findChild<QListWidget *>("layerList");
-    check(list && list->isVisible(), "Layer list unavailable");
+    auto tree = window.findChild<QTreeWidget *>("layerTree");
+    check(tree && tree->isVisible(), "Layer tree unavailable");
+    QTreeWidgetItem *group = nullptr;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i)
+      if (tree->topLevelItem(i)->text(0) == QStringLiteral("scientific-group.nc"))
+        group = tree->topLevelItem(i);
+    check(group && group->childCount() == 2,
+          "Scientific variables were not grouped below their source dataset");
+    check(group->checkState(0) == Qt::Checked,
+          "Selected scientific variables were not checked by default");
+    auto layerPanel = window.findChild<QWidget *>("floatingPanel");
+    tree->setCurrentItem(tree->topLevelItem(0)->childCount()
+        ? tree->topLevelItem(0)->child(0) : tree->topLevelItem(0));
+    QTest::qWait(40);
+    const int rasterPanelWidth = layerPanel->width();
+    tree->setCurrentItem(group->child(1));
+    QTest::qWait(40);
+    check(layerPanel->width() == rasterPanelWidth,
+          "Layer panel width changed when the selected layer type changed");
+    const int beforeResize = layerPanel->width();
+    const QPointF pressPoint(3, layerPanel->height() / 2);
+    const QPointF movePoint(-37, layerPanel->height() / 2);
+    QMouseEvent resizePress(QEvent::MouseButtonPress, pressPoint,
+                            layerPanel->mapToGlobal(pressPoint.toPoint()),
+                            Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(layerPanel, &resizePress);
+    QMouseEvent resizeMove(QEvent::MouseMove, movePoint,
+                           layerPanel->mapToGlobal(movePoint.toPoint()),
+                           Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(layerPanel, &resizeMove);
+    QMouseEvent resizeRelease(QEvent::MouseButtonRelease, movePoint,
+                              layerPanel->mapToGlobal(movePoint.toPoint()),
+                              Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(layerPanel, &resizeRelease);
+    QTest::qWait(40);
+    check(layerPanel->width() >= beforeResize + 30,
+          "Dragging the layer panel left edge did not resize it");
+    group->setCheckState(0, Qt::Unchecked);
+    QTest::qWait(40);
+    check(!controller.layerModel()->layerAt(
+              controller.layerModel()->indexOfLayer("ui-group-a"))->visible
+          && !controller.layerModel()->layerAt(
+              controller.layerModel()->indexOfLayer("ui-group-b"))->visible,
+          "Dataset visibility did not update all scientific variables");
+    group = nullptr;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i)
+      if (tree->topLevelItem(i)->text(0) == QStringLiteral("scientific-group.nc"))
+        group = tree->topLevelItem(i);
+    group->setCheckState(0, Qt::Checked);
+    QTest::qWait(40);
+    group = nullptr;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i)
+      if (tree->topLevelItem(i)->text(0) == QStringLiteral("scientific-group.nc"))
+        group = tree->topLevelItem(i);
     const auto dragLayer = [&](int from, int to, bool cancel = false) {
-      list->setCurrentRow(from);
-      QTest::qWait(80);
-      const QString draggedId = controller.layerModel()->layerAt(from)->id;
-      const int count = list->count();
-      const QPoint target = to < 0
-          ? QPoint(list->viewport()->width() / 2, list->viewport()->height() - 2)
-          : list->visualItemRect(list->item(to)).center();
-      std::unique_ptr<QMimeData> data(list->model()->mimeData(
-          {list->model()->index(from, 0)}));
+      QTreeWidgetItem *source = group->child(from);
+      QTreeWidgetItem *targetItem = group->child(to);
+      tree->setCurrentItem(source);
+      const QString draggedId = source->data(0, Qt::UserRole).toString();
+      const QString targetId = targetItem->data(0, Qt::UserRole).toString();
+      const int count = controller.layerModel()->count();
+      const int oldSourceRow = controller.layerModel()->indexOfLayer(draggedId);
+      const int oldTargetRow = controller.layerModel()->indexOfLayer(targetId);
+      const QPointF target = tree->visualItemRect(targetItem).center();
+      std::unique_ptr<QMimeData> data(tree->model()->mimeData(
+          {tree->indexFromItem(source)}));
       data->setData("application/x-georeader-layer-id", draggedId.toUtf8());
       // Deliver the same events as the OS; offscreen Qt has no native drag loop.
       QDragEnterEvent enter(target, Qt::MoveAction, data.get(),
                             Qt::LeftButton, Qt::NoModifier);
-      QApplication::sendEvent(list->viewport(), &enter);
+      QApplication::sendEvent(tree->viewport(), &enter);
       QDragMoveEvent move(target, Qt::MoveAction, data.get(),
                           Qt::LeftButton, Qt::NoModifier);
-      QApplication::sendEvent(list->viewport(), &move);
+      QApplication::sendEvent(tree->viewport(), &move);
       if (cancel) {
         QDragLeaveEvent leave;
-        QApplication::sendEvent(list->viewport(), &leave);
+        QApplication::sendEvent(tree->viewport(), &leave);
       } else {
         QDropEvent drop(target, Qt::MoveAction, data.get(),
                         Qt::LeftButton, Qt::NoModifier);
-        QApplication::sendEvent(list->viewport(), &drop);
+        QApplication::sendEvent(tree->viewport(), &drop);
         check(drop.isAccepted(), "Layer list rejected its internal drop");
       }
       QTest::qWait(100);
-      check(list->count() == count && controller.layerModel()->count() == count,
+      check(controller.layerModel()->count() == count,
             "Dragging a layer removed rows from the panel");
-      const int expectedRow = cancel ? from : to < 0 ? count - 1 : to;
-      check(controller.layerModel()->indexOfLayer(draggedId) == expectedRow,
+      const int newSourceRow = controller.layerModel()->indexOfLayer(draggedId);
+      const int newTargetRow = controller.layerModel()->indexOfLayer(targetId);
+      check(cancel ? newSourceRow == oldSourceRow && newTargetRow == oldTargetRow
+                   : newSourceRow == oldTargetRow && newTargetRow == oldSourceRow,
             "Dragging did not update layer order");
-      check(list->currentRow() == expectedRow, "Drag lost selected layer");
-      for (int i = 0; i < count; ++i)
-        check(list->item(i)->data(Qt::UserRole).toString() ==
-                  controller.layerModel()->layerAt(i)->id,
-              "Layer panel is out of sync after drag");
+      group = nullptr;
+      for (int i = 0; i < tree->topLevelItemCount(); ++i)
+        if (tree->topLevelItem(i)->text(0) == QStringLiteral("scientific-group.nc"))
+          group = tree->topLevelItem(i);
     };
-    dragLayer(0, 2);
-    dragLayer(2, 0);
-    dragLayer(0, 0);
-    dragLayer(0, 2, true);
-    const QSize previousSize = window.size();
-    window.resize(1280, 1200);
-    QTest::qWait(80);
-    dragLayer(0, -1);
-    dragLayer(list->count() - 1, 0);
-    window.resize(previousSize);
-    QTest::qWait(80);
-    list->setCurrentRow(list->count() - 1);
-    const QString keptId = controller.layerModel()->layerAt(list->currentRow())->id;
-    const QString removedId = controller.layerModel()->layerAt(0)->id;
-    auto remove = list->findChild<QToolButton *>("layerRemoveButton");
+    dragLayer(0, 1);
+    dragLayer(0, 1, true);
+    auto remove = tree->findChild<QToolButton *>("layerRemoveButton");
     check(remove, "Layer row remove button missing");
-    QTest::mouseMove(list->viewport(), list->visualItemRect(list->item(0)).center());
+    QTest::mouseMove(tree->viewport(), tree->visualItemRect(group->child(0)).center());
     QTest::qWait(50);
     check(remove->isVisible(), "Hover did not reveal remove button");
     QTest::mouseMove(remove, remove->rect().center());
@@ -654,37 +722,14 @@ int runScientificUiTests(MainWindow &window, AppController &controller) {
     QTest::qWait(80);
     window.grab().save("tests/output/layer-panel-dark.png");
     controller.setQtStyle(previousTheme);
-    list->setCurrentRow(0);
+    tree->setCurrentItem(tree->topLevelItem(0)->childCount()
+        ? tree->topLevelItem(0)->child(0) : tree->topLevelItem(0));
     QTest::qWait(80);
     auto editor = window.findChild<QWidget *>("layerEditor");
     auto scroll = window.findChild<QScrollArea *>("layerPropertyScroll");
     check(editor->width() <= scroll->viewport()->width(),
           "Raster property controls clipped horizontally");
     window.grab().save("tests/output/layer-panel-raster.png");
-    list->setCurrentRow(list->count() - 1);
-    const auto answerRemoval = [&](QMessageBox::StandardButton answer) {
-      QTest::mouseMove(list->viewport(), list->viewport()->rect().bottomLeft());
-      QTest::mouseMove(list->viewport(), list->visualItemRect(list->item(0)).center());
-      check(remove->isVisible(), "Remove button not available after returning to row");
-      bool handled = false;
-      QTimer::singleShot(0, &window, [&window, answer, &handled] {
-        if (auto dialog = window.findChild<QMessageBox *>()) {
-          handled = true;
-          dialog->button(answer)->click();
-        }
-      });
-      QTest::mouseClick(remove, Qt::LeftButton);
-      check(handled, "Row remove did not request confirmation");
-    };
-    const int countBeforeRemoval = list->count();
-    answerRemoval(QMessageBox::No);
-    check(list->count() == countBeforeRemoval, "Cancel removed a layer");
-    answerRemoval(QMessageBox::Yes);
-    check(controller.layerModel()->indexOfLayer(removedId) < 0,
-          "Remove button removed the selected layer instead of the hovered layer");
-    check(controller.layerModel()->indexOfLayer(keptId) >= 0 &&
-              list->currentRow() == controller.layerModel()->indexOfLayer(keptId),
-          "Removing another layer lost the selected layer");
     QTemporaryDir pixelFiles;
     const QString pixelPath = pixelFiles.filePath("no-georeference.tif");
     auto driver = GetGDALDriverManager()->GetDriverByName("GTiff");

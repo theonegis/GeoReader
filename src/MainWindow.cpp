@@ -20,6 +20,7 @@
 #include <QDrag>
 #include <QDropEvent>
 #include <QEvent>
+#include <QFileInfo>
 #include <QFontComboBox>
 #include <QFormLayout>
 #include <QFrame>
@@ -68,6 +69,9 @@
 namespace {
 
 constexpr auto layerDragMimeType = "application/x-georeader-layer-id";
+constexpr int layerIdRole = Qt::UserRole;
+constexpr int datasetIdRole = Qt::UserRole + 1;
+constexpr int layerItemKindRole = Qt::UserRole + 2;
 
 class MetadataItemDelegate final : public QStyledItemDelegate
 {
@@ -154,14 +158,18 @@ public:
     }
 };
 
-class LayerListWidget final : public QListWidget
+class LayerTreeWidget final : public QTreeWidget
 {
 public:
-    using MoveHandler = std::function<void(int, int)>;
+    using MoveHandler = std::function<void(const QString &, const QString &, bool)>;
 
-    explicit LayerListWidget(QWidget *parent = nullptr)
-        : QListWidget(parent)
+    explicit LayerTreeWidget(QWidget *parent = nullptr)
+        : QTreeWidget(parent)
     {
+        setColumnCount(1);
+        setHeaderHidden(true);
+        setRootIsDecorated(true);
+        setIndentation(18);
         setDragEnabled(true);
         setAcceptDrops(true);
         setDropIndicatorShown(true);
@@ -180,8 +188,13 @@ public:
         m_removeButton->setProperty("class", QStringLiteral("danger"));
         m_removeButton->hide();
         connect(m_removeButton, &QToolButton::clicked, this, [this] {
-            if (m_hovered.isValid() && removeHandler)
-                removeHandler(m_hovered.row());
+            if (!m_hovered.isValid() || !removeHandler)
+                return;
+            if (QTreeWidgetItem *item = itemFromIndex(m_hovered)) {
+                removeHandler(item->data(0, layerItemKindRole).toString(),
+                              item->data(0, layerIdRole).toString(),
+                              item->data(0, datasetIdRole).toString());
+            }
         });
         connect(verticalScrollBar(), &QScrollBar::valueChanged,
                 this, [this] { hideRemoveButton(); });
@@ -190,7 +203,7 @@ public:
     }
 
     MoveHandler moveHandler;
-    std::function<void(int)> removeHandler;
+    std::function<void(const QString &, const QString &, const QString &)> removeHandler;
 
 protected:
     void startDrag(Qt::DropActions) override
@@ -201,13 +214,12 @@ protected:
         QPointer<QDrag> drag = new QDrag(this);
         auto *data = model()->mimeData(selectedIndexes());
         data->setData(layerDragMimeType,
-                      currentItem()->data(Qt::UserRole).toString().toUtf8());
+                      currentItem()->data(0, layerIdRole).toString().toUtf8());
         drag->setMimeData(data);
         const QRect rowRect = visualItemRect(currentItem());
         drag->setPixmap(viewport()->grab(rowRect));
         drag->setHotSpot(rowRect.center() - rowRect.topLeft());
-        // The model owns reordering. QListWidget's default startDrag() also
-        // deletes the source rows after a MoveAction, even after our refresh.
+        // The LayerModel owns reordering; never let the view delete source rows.
         drag->exec(Qt::MoveAction);
         if (drag)
             drag->deleteLater();
@@ -219,7 +231,7 @@ protected:
             event->ignore();
             return;
         }
-        QListWidget::dragEnterEvent(event);
+        QTreeWidget::dragEnterEvent(event);
         event->setDropAction(Qt::MoveAction);
         event->accept();
     }
@@ -230,14 +242,14 @@ protected:
             event->ignore();
             return;
         }
-        QListWidget::dragMoveEvent(event);
+        QTreeWidget::dragMoveEvent(event);
         event->setDropAction(Qt::MoveAction);
         event->accept();
     }
 
     void mouseMoveEvent(QMouseEvent *event) override
     {
-        QListWidget::mouseMoveEvent(event);
+        QTreeWidget::mouseMoveEvent(event);
         m_hovered = indexAt(event->position().toPoint());
         const QRect rowRect = visualRect(m_hovered);
         if (!m_hovered.isValid() || state() == QAbstractItemView::DraggingState) {
@@ -253,7 +265,7 @@ protected:
     void leaveEvent(QEvent *event) override
     {
         hideRemoveButton();
-        QListWidget::leaveEvent(event);
+        QTreeWidget::leaveEvent(event);
     }
 
     void dropEvent(QDropEvent *event) override
@@ -264,33 +276,44 @@ protected:
             event->ignore();
             return;
         }
-        int from = -1;
-        for (int row = 0; row < count(); ++row) {
-            if (item(row)->data(Qt::UserRole).toString() == sourceId) {
-                from = row;
-                break;
-            }
+        QTreeWidgetItem *source = findItem(sourceId);
+        QTreeWidgetItem *target = itemAt(event->position().toPoint());
+        if (!source || !target) {
+            event->ignore();
+            return;
         }
-        int to = indexAt(event->position().toPoint()).row();
-        if (to < 0)
-            to = count() - 1;
-        if (from < 0) {
+        const bool sourceDataset =
+            source->data(0, layerItemKindRole).toString() == QStringLiteral("dataset");
+        const bool targetDataset =
+            target->data(0, layerItemKindRole).toString() == QStringLiteral("dataset");
+        if (sourceDataset != targetDataset
+            || (!sourceDataset && source->parent() != target->parent())) {
             event->ignore();
             return;
         }
         event->setDropAction(Qt::MoveAction);
         event->accept();
-        if (moveHandler && from >= 0 && to >= 0 && from != to) {
+        const QString targetId = target->data(0, layerIdRole).toString();
+        if (moveHandler && sourceId != targetId) {
             const MoveHandler handler = moveHandler;
-            // rowsMoved 会重建本列表；等 dropEvent 退出后再改模型，避免在
-            // QListView 的拖放栈中清空其内部项目。
-            QTimer::singleShot(0, this, [handler, from, to] {
-                handler(from, to);
+            QTimer::singleShot(0, this, [handler, sourceId, targetId,
+                                         sourceDataset] {
+                handler(sourceId, targetId, sourceDataset);
             });
         }
     }
 
 private:
+    QTreeWidgetItem *findItem(const QString &id) const
+    {
+        for (QTreeWidgetItemIterator iterator(
+                 const_cast<LayerTreeWidget *>(this)); *iterator; ++iterator) {
+            if ((*iterator)->data(0, layerIdRole).toString() == id)
+                return *iterator;
+        }
+        return nullptr;
+    }
+
     void hideRemoveButton()
     {
         m_removeButton->hide();
@@ -368,7 +391,11 @@ public:
     {
         setFrameShape(QFrame::NoFrame);
         setAutoFillBackground(false);
+        setMouseTracking(true);
     }
+
+    void setLeftResizeEnabled(bool enabled) { m_leftResizeEnabled = enabled; }
+    std::function<void(int)> widthRequest;
 
 protected:
     void paintEvent(QPaintEvent *event) override
@@ -382,8 +409,57 @@ protected:
         QFrame::paintEvent(event);
     }
 
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (m_leftResizeEnabled && event->button() == Qt::LeftButton
+            && event->position().x() <= 8.0) {
+            m_resizing = true;
+            m_pressGlobalX = event->globalPosition().x();
+            m_pressWidth = width();
+            event->accept();
+            return;
+        }
+        QFrame::mousePressEvent(event);
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (m_resizing) {
+            const int requested = m_pressWidth
+                + qRound(m_pressGlobalX - event->globalPosition().x());
+            if (widthRequest)
+                widthRequest(requested);
+            event->accept();
+            return;
+        }
+        setCursor(m_leftResizeEnabled && event->position().x() <= 8.0
+                      ? Qt::SizeHorCursor : Qt::ArrowCursor);
+        QFrame::mouseMoveEvent(event);
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (m_resizing && event->button() == Qt::LeftButton) {
+            m_resizing = false;
+            event->accept();
+            return;
+        }
+        QFrame::mouseReleaseEvent(event);
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        if (!m_resizing)
+            unsetCursor();
+        QFrame::leaveEvent(event);
+    }
+
 private:
     QPalette::ColorRole m_background;
+    bool m_leftResizeEnabled = false;
+    bool m_resizing = false;
+    qreal m_pressGlobalX = 0.0;
+    int m_pressWidth = 0;
 };
 
 class StyleCardFrame final : public QFrame
@@ -481,6 +557,14 @@ QIcon colorSwatch(const QColor &color)
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing);
+    constexpr int checker = 4;
+    for (int y = 1; y < 17; y += checker) {
+        for (int x = 1; x < 17; x += checker) {
+            painter.fillRect(QRect(x, y, checker, checker),
+                ((x + y) / checker) % 2 ? QColor(225, 225, 225)
+                                         : QColor(250, 250, 250));
+        }
+    }
     painter.setPen(QPen(color.darker(135), 1));
     painter.setBrush(color);
     painter.drawRoundedRect(QRectF(1.0, 1.0, 16.0, 16.0), 4.0, 4.0);
@@ -576,6 +660,9 @@ MainWindow::MainWindow(AppController *controller, QWidget *parent)
     setWindowTitle(QStringLiteral("GeoReader"));
     setMinimumSize(900, 600);
     resize(1280, 820);
+    m_layerPanelWidth = std::clamp(
+        QSettings().value(QStringLiteral("ui/layerPanelWidth"), 420).toInt(),
+        320, 720);
 
     m_mapHost = new QWidget(this);
     m_mapHost->setObjectName(QStringLiteral("mapHost"));
@@ -670,8 +757,23 @@ MainWindow::MainWindow(AppController *controller, QWidget *parent)
     connect(m_controller->layerModel(), &QAbstractItemModel::dataChanged,
             this, [this] {
         m_hasLastRasterCoordinate = false;
+        // A checkbox edit originates inside QTreeWidget's itemChanged stack.
+        // Rebuilding the tree synchronously would delete the emitting item.
+        QTimer::singleShot(0, this, [this] {
+            refreshLayerList();
+            updateVectorLayerChoices();
+        });
+    });
+    connect(m_controller->layerModel(), &QAbstractItemModel::rowsInserted,
+            this, [this](const QModelIndex &, int first, int last) {
+        const int added = last - first + 1;
+        if (m_selectedLayer >= first)
+            m_selectedLayer += added;
+        if (m_selectedVectorLayer >= first)
+            m_selectedVectorLayer += added;
         refreshLayerList();
         updateVectorLayerChoices();
+        m_hasLastRasterCoordinate = false;
     });
     connect(m_controller->layerModel(), &QAbstractItemModel::rowsRemoved,
             this, [this](const QModelIndex &, int first, int last) {
@@ -906,8 +1008,19 @@ void MainWindow::buildToolRail()
 
 void MainWindow::buildFloatingPanel()
 {
-    m_panelFrame = new FloatingPanelFrame(m_mapHost);
+    auto *floatingFrame = new FloatingPanelFrame(m_mapHost);
+    m_panelFrame = floatingFrame;
     m_panelFrame->setObjectName(QStringLiteral("floatingPanel"));
+    floatingFrame->setLeftResizeEnabled(true);
+    floatingFrame->widthRequest = [this](int requested) {
+        if (m_activePanel != Panel::Layers || !m_mapHost)
+            return;
+        m_layerPanelWidth = std::clamp(
+            requested, 320, std::max(320, m_mapHost->width() - 120));
+        QSettings().setValue(QStringLiteral("ui/layerPanelWidth"),
+                             m_layerPanelWidth);
+        positionFloatingUi();
+    };
     auto *shadow = new QGraphicsDropShadowEffect(m_panelFrame);
     shadow->setBlurRadius(28.0);
     shadow->setOffset(0.0, 6.0);
@@ -1083,32 +1196,65 @@ QWidget *MainWindow::buildLayersPanel()
     baseMapRow->addWidget(m_baseMapCombo, 1);
     listSectionLayout->addLayout(baseMapRow);
 
-    auto *list = new LayerListWidget(listSection);
-    list->setObjectName(QStringLiteral("layerList"));
-    list->setAlternatingRowColors(false);
-    list->setSelectionMode(QAbstractItemView::SingleSelection);
-    list->setMinimumHeight(150);
-    list->setFrameShape(QFrame::NoFrame);
-    list->setAutoFillBackground(false);
-    list->viewport()->setAutoFillBackground(false);
-    list->moveHandler = [this](int from, int to) {
-        moveLayer(from, to);
+    auto *tree = new LayerTreeWidget(listSection);
+    tree->setObjectName(QStringLiteral("layerTree"));
+    tree->setAlternatingRowColors(false);
+    tree->setSelectionMode(QAbstractItemView::SingleSelection);
+    tree->setMinimumHeight(150);
+    tree->setFrameShape(QFrame::NoFrame);
+    tree->setAutoFillBackground(false);
+    tree->viewport()->setAutoFillBackground(false);
+    tree->moveHandler = [this](const QString &sourceId,
+                               const QString &targetId, bool dataset) {
+        LayerModel *model = m_controller->layerModel();
+        const LayerSnapshot *selected = model->layerAt(selectedLayerRow());
+        const QString selectedId = selected ? selected->id : QString();
+        if (dataset)
+            model->moveDataset(sourceId, targetId);
+        else
+            model->moveLayerById(sourceId, targetId);
+        m_selectedLayer = model->indexOfLayer(selectedId);
     };
-    list->removeHandler = [this](int row) { removeLayer(row); };
-    m_layerList = list;
-    connect(m_layerList, &QListWidget::currentRowChanged, this,
-            [this](int row) {
-        m_selectedLayer = row;
+    tree->removeHandler = [this](const QString &kind, const QString &layerId,
+                                 const QString &datasetId) {
+        if (kind == QStringLiteral("dataset"))
+            removeDataset(datasetId);
+        else
+            removeLayer(m_controller->layerModel()->indexOfLayer(layerId));
+    };
+    m_layerTree = tree;
+    connect(m_layerTree, &QTreeWidget::currentItemChanged, this,
+            [this](QTreeWidgetItem *item) {
+        if (!item) {
+            m_selectedLayer = -1;
+        } else if (item->data(0, layerItemKindRole).toString()
+                   == QStringLiteral("dataset")) {
+            const QVariantMap info = m_controller->layerModel()->datasetInfo(
+                item->data(0, datasetIdRole).toString());
+            m_selectedLayer = info.value(QStringLiteral("firstRow"), -1).toInt();
+        } else {
+            m_selectedLayer = m_controller->layerModel()->indexOfLayer(
+                item->data(0, layerIdRole).toString());
+        }
         refreshLayerEditor();
     });
-    connect(m_layerList, &QListWidget::itemChanged, this,
-            [this](QListWidgetItem *item) {
+    connect(m_layerTree, &QTreeWidget::itemChanged, this,
+            [this](QTreeWidgetItem *item) {
         if (m_refreshingLayerEditor || !item)
             return;
-        m_controller->layerModel()->setVisible(
-            m_layerList->row(item), item->checkState() == Qt::Checked);
+        if (item->data(0, layerItemKindRole).toString()
+            == QStringLiteral("dataset")) {
+            m_controller->layerModel()->setDatasetVisible(
+                item->data(0, datasetIdRole).toString(),
+                item->checkState(0) == Qt::Checked);
+        } else {
+            m_controller->layerModel()->setVisible(
+                m_controller->layerModel()->indexOfLayer(
+                    item->data(0, layerIdRole).toString()),
+                item->checkState(0) == Qt::Checked);
+        }
     });
-    listSectionLayout->addWidget(m_layerList, 1);
+    listSectionLayout->addWidget(m_layerTree, 1);
     layout->addWidget(listSection, 2);
 
     auto *propertySection = new FloatingPanelFrame(page, QPalette::Base);
@@ -1182,6 +1328,22 @@ QWidget *MainWindow::buildLayersPanel()
     vectorForm->addRow(tr("线颜色"), m_lineColorButton);
     vectorForm->addRow(tr("填充 / 点颜色"), m_fillColorButton);
     vectorForm->addRow(tr("线宽"), m_lineWidthSpin);
+    m_labelEnabledCheck = new QCheckBox(tr("显示标注"), vectorGroup);
+    m_labelEnabledCheck->setObjectName(QStringLiteral("vectorLabelEnabled"));
+    m_labelFieldCombo = new QComboBox(vectorGroup);
+    m_labelFieldCombo->setObjectName(QStringLiteral("vectorLabelField"));
+    m_labelFontCombo = new QFontComboBox(vectorGroup);
+    m_labelFontCombo->setObjectName(QStringLiteral("vectorLabelFont"));
+    m_labelFontSizeSpin = new QSpinBox(vectorGroup);
+    m_labelFontSizeSpin->setObjectName(QStringLiteral("vectorLabelSize"));
+    m_labelFontSizeSpin->setRange(6, 72);
+    m_labelPlacementCombo = new QComboBox(vectorGroup);
+    m_labelPlacementCombo->setObjectName(QStringLiteral("vectorLabelPlacement"));
+    vectorForm->addRow(tr("标注"), m_labelEnabledCheck);
+    vectorForm->addRow(tr("标注字段"), m_labelFieldCombo);
+    vectorForm->addRow(tr("标注字体"), m_labelFontCombo);
+    vectorForm->addRow(tr("标注字号"), m_labelFontSizeSpin);
+    vectorForm->addRow(tr("标注位置"), m_labelPlacementCombo);
     connect(m_lineColorButton, &QPushButton::clicked,
             this, [this] { pickVectorColor(true); });
     connect(m_fillColorButton, &QPushButton::clicked,
@@ -1189,6 +1351,21 @@ QWidget *MainWindow::buildLayersPanel()
     connect(m_lineWidthSpin,
             qOverload<double>(&QDoubleSpinBox::valueChanged),
             this, [this] { if (!m_refreshingLayerEditor) applyLayerEditor(); });
+    const auto applyVectorLabel = [this] {
+        if (!m_refreshingLayerEditor)
+            applyLayerEditor();
+    };
+    connect(m_labelEnabledCheck, &QCheckBox::toggled,
+            this, applyVectorLabel);
+    connect(m_labelFieldCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [applyVectorLabel](int) { applyVectorLabel(); });
+    connect(m_labelFontCombo, &QFontComboBox::currentFontChanged,
+            this, [applyVectorLabel](const QFont &) { applyVectorLabel(); });
+    connect(m_labelFontSizeSpin, qOverload<int>(&QSpinBox::valueChanged),
+            this, [applyVectorLabel](int) { applyVectorLabel(); });
+    connect(m_labelPlacementCombo,
+            qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [applyVectorLabel](int) { applyVectorLabel(); });
     vectorSectionLayout->addWidget(vectorGroup);
     m_vectorStyleBox = vectorSection;
     editor->addWidget(vectorSection);
@@ -1588,20 +1765,39 @@ void MainWindow::showMultidimensionalImportDialog()
     layout->setSpacing(10);
 
     auto *summary = mutedLabel(
-        tr("选择要显示的变量、X/Y 维以及其余维度的切片。"), dialog);
+        tr("勾选一个或多个变量；所选变量会作为同一数据文件的子图层加载。"),
+        dialog);
     layout->addWidget(summary);
-    auto *form = new QFormLayout;
-    auto *arrayCombo = new QComboBox(dialog);
-    arrayCombo->setObjectName(QStringLiteral("scientificVariableBox"));
+    auto *variableTree = new QTreeWidget(dialog);
+    variableTree->setObjectName(QStringLiteral("scientificVariableTree"));
+    variableTree->setColumnCount(3);
+    variableTree->setHeaderLabels({tr("变量"), tr("类型"), tr("维度")});
+    variableTree->setRootIsDecorated(false);
+    variableTree->setSelectionMode(QAbstractItemView::SingleSelection);
+    variableTree->setMinimumHeight(150);
     for (int index = 0; index < arrays.size(); ++index) {
         const QVariantMap array = arrays.at(index).toMap();
-        arrayCombo->addItem(
-            QStringLiteral("%1 · %2")
-                .arg(array.value(QStringLiteral("fullName")).toString(),
-                     array.value(QStringLiteral("dataType")).toString()),
-            index);
+        QStringList dimensions;
+        for (const QVariant &value :
+             array.value(QStringLiteral("dimensions")).toList()) {
+            const QVariantMap dimension = value.toMap();
+            dimensions.push_back(QStringLiteral("%1(%2)")
+                .arg(dimension.value(QStringLiteral("name")).toString())
+                .arg(dimension.value(QStringLiteral("size")).toULongLong()));
+        }
+        auto *item = new QTreeWidgetItem(variableTree, {
+            array.value(QStringLiteral("fullName")).toString(),
+            array.value(QStringLiteral("dataType")).toString(),
+            dimensions.join(QStringLiteral(" × "))});
+        item->setData(0, Qt::UserRole, index);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(0, index == 0 ? Qt::Checked : Qt::Unchecked);
     }
-    form->addRow(tr("变量"), arrayCombo);
+    variableTree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    variableTree->header()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    variableTree->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    layout->addWidget(variableTree);
+    auto *form = new QFormLayout;
     auto *xCombo = new QComboBox(dialog);
     auto *yCombo = new QComboBox(dialog);
     form->addRow(tr("X 维"), xCombo);
@@ -1623,6 +1819,26 @@ void MainWindow::showMultidimensionalImportDialog()
     sliceLayout->setContentsMargins(12, 10, 12, 10);
     layout->addWidget(sliceSection, 1);
     auto sliceSpins = std::make_shared<QVector<QSpinBox *>>();
+    auto states = std::make_shared<QVector<QVariantMap>>(arrays.size());
+    for (int index = 0; index < arrays.size(); ++index) {
+        const QVariantMap array = arrays.at(index).toMap();
+        QVariantList slices;
+        for (const QVariant &unused :
+             array.value(QStringLiteral("dimensions")).toList()) {
+            Q_UNUSED(unused);
+            slices.push_back(0);
+        }
+        (*states)[index] = {
+            {QStringLiteral("xDimension"),
+             array.value(QStringLiteral("defaultXDimension"))},
+            {QStringLiteral("yDimension"),
+             array.value(QStringLiteral("defaultYDimension"))},
+            {QStringLiteral("sliceIndices"), slices},
+            {QStringLiteral("coordinateMode"), QStringLiteral("auto")},
+            {QStringLiteral("crs"), array.value(QStringLiteral("crs"))}
+        };
+    }
+    auto currentArray = std::make_shared<int>(-1);
 
     const auto updateSliceAvailability =
         [xCombo, yCombo, sliceSpins] {
@@ -1631,13 +1847,33 @@ void MainWindow::showMultidimensionalImportDialog()
         for (int index = 0; index < sliceSpins->size(); ++index)
             sliceSpins->at(index)->setEnabled(index != x && index != y);
     };
+    const auto saveCurrent = [states, currentArray, xCombo, yCombo,
+                              coordinateMode, crs, sliceSpins] {
+        if (*currentArray < 0 || *currentArray >= states->size())
+            return;
+        QVariantList slices;
+        for (QSpinBox *spin : *sliceSpins)
+            slices.push_back(spin->value());
+        (*states)[*currentArray] = {
+            {QStringLiteral("xDimension"), xCombo->currentData()},
+            {QStringLiteral("yDimension"), yCombo->currentData()},
+            {QStringLiteral("sliceIndices"), slices},
+            {QStringLiteral("coordinateMode"), coordinateMode->currentData()},
+            {QStringLiteral("crs"), crs->text()}
+        };
+    };
     const auto updateArray =
-        [arrays, arrayCombo, xCombo, yCombo, crs, sliceLayout,
-         sliceSpins, updateSliceAvailability] {
-        const int arrayIndex = arrayCombo->currentData().toInt();
+        [arrays, variableTree, xCombo, yCombo, coordinateMode, crs,
+         sliceLayout, sliceSpins, states, currentArray,
+         updateSliceAvailability] {
+        QTreeWidgetItem *selected = variableTree->currentItem();
+        const int arrayIndex = selected
+            ? selected->data(0, Qt::UserRole).toInt() : -1;
         if (arrayIndex < 0 || arrayIndex >= arrays.size())
             return;
+        *currentArray = arrayIndex;
         const QVariantMap array = arrays.at(arrayIndex).toMap();
+        const QVariantMap state = states->at(arrayIndex);
         const QVariantList dimensions =
             array.value(QStringLiteral("dimensions")).toList();
         const QSignalBlocker xBlocker(xCombo);
@@ -1666,17 +1902,25 @@ void MainWindow::showMultidimensionalImportDialog()
             sliceLayout->addRow(name, spin);
             sliceSpins->push_back(spin);
         }
-        const int defaultX = array.value(
-            QStringLiteral("defaultXDimension")).toInt();
-        const int defaultY = array.value(
-            QStringLiteral("defaultYDimension")).toInt();
-        xCombo->setCurrentIndex(std::max(0, xCombo->findData(defaultX)));
-        yCombo->setCurrentIndex(std::max(0, yCombo->findData(defaultY)));
-        crs->setText(array.value(QStringLiteral("crs")).toString());
+        const QVariantList savedSlices =
+            state.value(QStringLiteral("sliceIndices")).toList();
+        for (int index = 0; index < sliceSpins->size(); ++index)
+            sliceSpins->at(index)->setValue(
+                index < savedSlices.size() ? savedSlices.at(index).toInt() : 0);
+        xCombo->setCurrentIndex(std::max(0, xCombo->findData(
+            state.value(QStringLiteral("xDimension")).toInt())));
+        yCombo->setCurrentIndex(std::max(0, yCombo->findData(
+            state.value(QStringLiteral("yDimension")).toInt())));
+        coordinateMode->setCurrentIndex(std::max(0, coordinateMode->findData(
+            state.value(QStringLiteral("coordinateMode")).toString())));
+        crs->setText(state.value(QStringLiteral("crs")).toString());
         updateSliceAvailability();
     };
-    connect(arrayCombo, qOverload<int>(&QComboBox::currentIndexChanged),
-            dialog, [updateArray](int) { updateArray(); });
+    connect(variableTree, &QTreeWidget::currentItemChanged, dialog,
+            [saveCurrent, updateArray](QTreeWidgetItem *, QTreeWidgetItem *) {
+        saveCurrent();
+        updateArray();
+    });
     connect(xCombo, qOverload<int>(&QComboBox::currentIndexChanged),
             dialog, [updateSliceAvailability](int) {
         updateSliceAvailability();
@@ -1685,6 +1929,7 @@ void MainWindow::showMultidimensionalImportDialog()
             dialog, [updateSliceAvailability](int) {
         updateSliceAvailability();
     });
+    variableTree->setCurrentItem(variableTree->topLevelItem(0));
     updateArray();
 
     auto *buttons = new QDialogButtonBox(
@@ -1694,21 +1939,32 @@ void MainWindow::showMultidimensionalImportDialog()
     buttons->button(QDialogButtonBox::Cancel)->setObjectName(QStringLiteral("scientificCancel"));
     buttons->button(QDialogButtonBox::Cancel)->setText(tr("取消"));
     connect(buttons, &QDialogButtonBox::accepted, dialog,
-            [this, dialog, arrayCombo, xCombo, yCombo, coordinateMode,
-             crs, sliceSpins] {
-        const int x = xCombo->currentData().toInt();
-        const int y = yCombo->currentData().toInt();
-        if (x == y) {
+            [this, dialog, variableTree, states, saveCurrent] {
+        saveCurrent();
+        QVariantList selections;
+        for (int row = 0; row < variableTree->topLevelItemCount(); ++row) {
+            QTreeWidgetItem *item = variableTree->topLevelItem(row);
+            if (item->checkState(0) != Qt::Checked)
+                continue;
+            const int arrayIndex = item->data(0, Qt::UserRole).toInt();
+            QVariantMap selection = states->at(arrayIndex);
+            if (selection.value(QStringLiteral("xDimension"))
+                == selection.value(QStringLiteral("yDimension"))) {
+                QMessageBox::warning(
+                    dialog, tr("导入多维数据"),
+                    tr("变量 %1 的 X 维和 Y 维必须不同。")
+                        .arg(item->text(0)));
+                return;
+            }
+            selection.insert(QStringLiteral("arrayIndex"), arrayIndex);
+            selections.push_back(selection);
+        }
+        if (selections.isEmpty()) {
             QMessageBox::warning(dialog, tr("导入多维数据"),
-                                 tr("X 维和 Y 维必须不同。"));
+                                 tr("请至少勾选一个变量。"));
             return;
         }
-        QVariantList slices;
-        for (QSpinBox *spin : *sliceSpins)
-            slices.push_back(spin->value());
-        m_controller->confirmMultidimensionalImport(
-            arrayCombo->currentData().toInt(), x, y, slices,
-            coordinateMode->currentData().toString(), crs->text());
+        m_controller->confirmMultidimensionalImports(selections);
         dialog->accept();
     });
     connect(buttons, &QDialogButtonBox::rejected, dialog, [this, dialog] {
@@ -1785,31 +2041,68 @@ int MainWindow::selectedLayerRow() const
 
 void MainWindow::refreshLayerList()
 {
-    if (!m_layerList)
+    if (!m_layerTree)
         return;
     m_refreshingLayerEditor = true;
-    const int previous = selectedLayerRow();
-    m_layerList->clear();
-    for (int row = 0; row < m_controller->layerModel()->count(); ++row) {
-        const LayerSnapshot *layer = m_controller->layerModel()->layerAt(row);
-        auto *item = new QListWidgetItem(m_layerList);
-        item->setData(Qt::UserRole, layer->id);
-        item->setText(QStringLiteral("%1\n%2 · %3")
-                          .arg(layer->name, geometryLabel(*layer),
-                               layer->crsLabel.isEmpty() ? tr("未知坐标系")
-                                                         : layer->crsLabel));
-        item->setCheckState(layer->visible ? Qt::Checked : Qt::Unchecked);
-        item->setIcon(layerPreview(*layer));
-        item->setFlags(item->flags() | Qt::ItemIsDragEnabled
-                       | Qt::ItemIsDropEnabled | Qt::ItemIsUserCheckable);
-        item->setToolTip(layer->path);
-        item->setSizeHint(QSize(0, 54));
+    const QSignalBlocker treeSignals(m_layerTree);
+    const LayerSnapshot *previousLayer =
+        m_controller->layerModel()->layerAt(selectedLayerRow());
+    const QString previousId = previousLayer ? previousLayer->id : QString();
+    m_layerTree->clear();
+    LayerModel *model = m_controller->layerModel();
+    int row = 0;
+    while (row < model->count()) {
+        const LayerSnapshot *first = model->layerAt(row);
+        const QVariantMap info = model->datasetInfo(first->datasetId);
+        const int layerCount = info.value(QStringLiteral("layerCount"), 1).toInt();
+        QTreeWidgetItem *parent = nullptr;
+        if (layerCount > 1) {
+            parent = new QTreeWidgetItem(m_layerTree);
+            parent->setData(0, layerIdRole, first->datasetId);
+            parent->setData(0, datasetIdRole, first->datasetId);
+            parent->setData(0, layerItemKindRole, QStringLiteral("dataset"));
+            parent->setText(0, first->datasetName.isEmpty()
+                ? QFileInfo(first->path).fileName() : first->datasetName);
+            const int visible = info.value(QStringLiteral("visibleCount")).toInt();
+            parent->setCheckState(0, visible == 0 ? Qt::Unchecked
+                : visible == layerCount ? Qt::Checked : Qt::PartiallyChecked);
+            parent->setFlags(parent->flags() | Qt::ItemIsDragEnabled
+                             | Qt::ItemIsDropEnabled | Qt::ItemIsUserCheckable
+                             | Qt::ItemIsAutoTristate);
+            parent->setToolTip(0, first->path);
+            parent->setExpanded(true);
+        }
+        for (int offset = 0; offset < layerCount && row + offset < model->count(); ++offset) {
+            const LayerSnapshot *layer = model->layerAt(row + offset);
+            auto *item = parent ? new QTreeWidgetItem(parent)
+                                : new QTreeWidgetItem(m_layerTree);
+            item->setData(0, layerIdRole, layer->id);
+            item->setData(0, datasetIdRole, layer->datasetId);
+            item->setData(0, layerItemKindRole, QStringLiteral("layer"));
+            item->setText(0, QStringLiteral("%1\n%2 · %3")
+                              .arg(layer->name, geometryLabel(*layer),
+                                   layer->crsLabel.isEmpty() ? tr("未知坐标系")
+                                                             : layer->crsLabel));
+            item->setCheckState(0, layer->visible ? Qt::Checked : Qt::Unchecked);
+            item->setIcon(0, layerPreview(*layer));
+            item->setFlags(item->flags() | Qt::ItemIsDragEnabled
+                           | Qt::ItemIsUserCheckable
+                           | (parent ? Qt::NoItemFlags : Qt::ItemIsDropEnabled));
+            item->setToolTip(0, layer->path);
+            item->setSizeHint(0, QSize(0, 54));
+            if (layer->id == previousId)
+                m_layerTree->setCurrentItem(item);
+        }
+        row += layerCount;
     }
     if (m_emptyState)
-        m_emptyState->setVisible(m_controller->layerModel()->count() == 0);
+        m_emptyState->setVisible(model->count() == 0);
     updatePanelHeader();
-    if (previous >= 0)
-        m_layerList->setCurrentRow(previous);
+    if (!m_layerTree->currentItem() && m_layerTree->topLevelItemCount() > 0) {
+        QTreeWidgetItem *first = m_layerTree->topLevelItem(0);
+        m_layerTree->setCurrentItem(first->childCount() > 0 ? first->child(0)
+                                                            : first);
+    }
     m_refreshingLayerEditor = false;
     refreshLayerEditor();
 }
@@ -1844,11 +2137,54 @@ void MainWindow::refreshLayerEditor()
         m_vectorStyleForm->setRowVisible(m_lineColorButton, !point);
         m_vectorStyleForm->setRowVisible(m_fillColorButton, point || polygon);
         m_vectorStyleForm->setRowVisible(m_lineWidthSpin, !point);
-        m_lineColorButton->setText(layer->lineColor.name());
         m_lineColorButton->setIcon(colorSwatch(layer->lineColor));
-        m_fillColorButton->setText(layer->fillColor.name());
+        m_lineColorButton->setText(layer->lineColor.name(QColor::HexArgb));
+        m_fillColorButton->setText(layer->fillColor.name(QColor::HexArgb));
         m_fillColorButton->setIcon(colorSwatch(layer->fillColor));
         m_lineWidthSpin->setValue(layer->lineWidth);
+        const QString previousField = layer->labelField;
+        m_labelFieldCombo->clear();
+        for (const QString &field : m_controller->vectorFields(selectedLayerRow()))
+            m_labelFieldCombo->addItem(field, field);
+        m_labelFieldCombo->setCurrentIndex(std::max(
+            0, m_labelFieldCombo->findData(previousField)));
+        m_labelFontCombo->setCurrentFont(
+            QFont(layer->labelFontFamily.isEmpty()
+                      ? QApplication::font().family()
+                      : layer->labelFontFamily));
+        m_labelFontSizeSpin->setValue(layer->labelFontSize);
+        m_labelPlacementCombo->clear();
+        const auto addPlacement = [this](const QString &text, const QString &id) {
+            m_labelPlacementCombo->addItem(text, id);
+        };
+        addPlacement(tr("几何中心"), QStringLiteral("center"));
+        if (point) {
+            addPlacement(tr("上方"), QStringLiteral("above"));
+            addPlacement(tr("下方"), QStringLiteral("below"));
+            addPlacement(tr("左侧"), QStringLiteral("left"));
+            addPlacement(tr("右侧"), QStringLiteral("right"));
+        } else if (polygon) {
+            addPlacement(tr("面内位置"), QStringLiteral("interior"));
+            addPlacement(tr("上方"), QStringLiteral("above"));
+            addPlacement(tr("下方"), QStringLiteral("below"));
+            addPlacement(tr("边界中点"), QStringLiteral("boundary"));
+        } else {
+            addPlacement(tr("线起点"), QStringLiteral("start"));
+            addPlacement(tr("线终点"), QStringLiteral("end"));
+            addPlacement(tr("线上方"), QStringLiteral("above"));
+            addPlacement(tr("线下方"), QStringLiteral("below"));
+        }
+        m_labelPlacementCombo->setCurrentIndex(std::max(
+            0, m_labelPlacementCombo->findData(layer->labelPlacement)));
+        m_labelEnabledCheck->setChecked(layer->labelEnabled);
+        const bool hasFields = m_labelFieldCombo->count() > 0;
+        m_labelEnabledCheck->setEnabled(hasFields);
+        for (QWidget *control : {static_cast<QWidget *>(m_labelFieldCombo),
+                                 static_cast<QWidget *>(m_labelFontCombo),
+                                 static_cast<QWidget *>(m_labelFontSizeSpin),
+                                 static_cast<QWidget *>(m_labelPlacementCombo)}) {
+            control->setEnabled(hasFields && layer->labelEnabled);
+        }
     } else {
         rebuildBandControls(layer->bandCount);
         m_rgbBandBox->setVisible(layer->bandCount > 1);
@@ -1946,6 +2282,12 @@ void MainWindow::applyLayerEditor()
         m_controller->layerModel()->setVectorStyle(
             row, layer->lineColor, layer->fillColor,
             m_lineWidthSpin->value());
+        m_controller->layerModel()->setVectorLabel(
+            row, m_labelEnabledCheck->isChecked(),
+            m_labelFieldCombo->currentData().toString(),
+            m_labelFontCombo->currentFont().family(),
+            m_labelFontSizeSpin->value(),
+            m_labelPlacementCombo->currentData().toString());
         return;
     }
     const bool single = layer->bandCount == 1;
@@ -1986,7 +2328,8 @@ void MainWindow::pickVectorColor(bool lineColor)
         return;
     const QColor color = QColorDialog::getColor(
         lineColor ? layer->lineColor : layer->fillColor, this,
-        lineColor ? tr("选择线颜色") : tr("选择填充颜色"));
+        lineColor ? tr("选择线颜色") : tr("选择填充颜色"),
+        QColorDialog::ShowAlphaChannel);
     if (!color.isValid())
         return;
     m_controller->layerModel()->setVectorStyle(
@@ -2021,6 +2364,21 @@ void MainWindow::removeLayer(int row)
         == QMessageBox::Yes) {
         m_controller->layerModel()->removeLayer(
             m_controller->layerModel()->indexOfLayer(id));
+    }
+}
+
+void MainWindow::removeDataset(const QString &datasetId)
+{
+    const QVariantMap info = m_controller->layerModel()->datasetInfo(datasetId);
+    if (info.isEmpty())
+        return;
+    if (QMessageBox::question(
+            this, tr("移除数据集"),
+            tr("确定从当前项目移除“%1”及其全部 %2 个图层吗？")
+                .arg(info.value(QStringLiteral("name")).toString())
+                .arg(info.value(QStringLiteral("layerCount")).toInt()))
+        == QMessageBox::Yes) {
+        m_controller->layerModel()->removeDataset(datasetId);
     }
 }
 
@@ -2537,15 +2895,10 @@ void MainWindow::positionFloatingUi()
     m_toolRail->setGeometry(margin, margin, primaryWidth,
                             std::max(80, area.height() - 2 * margin));
 
-    int preferredPanelWidth = m_activePanel == Panel::Raster ? 450
+    int preferredPanelWidth = m_activePanel == Panel::Layers ? m_layerPanelWidth
+        : m_activePanel == Panel::Raster ? 450
         : m_activePanel == Panel::Scientific ? 480
         : m_activePanel == Panel::Settings ? 410 : 360;
-    if (m_activePanel == Panel::Layers) {
-        const LayerSnapshot *layer =
-            m_controller->layerModel()->layerAt(selectedLayerRow());
-        if (layer && layer->type == QStringLiteral("raster"))
-            preferredPanelWidth = 450;
-    }
     const int panelWidth = std::clamp(
         preferredPanelWidth, 320, std::max(320, area.width() - 120));
     m_panelFrame->setGeometry(

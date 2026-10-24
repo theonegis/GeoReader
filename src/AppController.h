@@ -79,11 +79,14 @@ public:
     Q_INVOKABLE QVariantList queryRasters(double longitude, double latitude) const;
     Q_INVOKABLE QVariantMap queryVector(int row, double longitude, double latitude,
                                        double toleranceDegrees) const;
+    QStringList vectorFields(int row) const;
     Q_INVOKABLE QVariantMap layerMetadata(int row) const;
     Q_INVOKABLE void confirmMultidimensionalImport(
         int arrayIndex, int xDimension, int yDimension,
         const QVariantList &sliceIndices, const QString &coordinateMode,
         const QString &crs);
+    Q_INVOKABLE void confirmMultidimensionalImports(
+        const QVariantList &selections);
     Q_INVOKABLE void cancelMultidimensionalImport();
 
 signals:

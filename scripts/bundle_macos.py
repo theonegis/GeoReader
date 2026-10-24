@@ -19,6 +19,18 @@ def run(*args):
     return subprocess.check_output(args, text=True).strip()
 
 
+def checked_run(*args):
+    """Run a packaging command and retain its diagnostic output on failure."""
+    try:
+        return subprocess.run(args, text=True, capture_output=True, check=True)
+    except subprocess.CalledProcessError as error:
+        details = '\n'.join(part.strip() for part in (error.stdout, error.stderr)
+                            if isinstance(part, str) and part.strip())
+        raise RuntimeError(
+            f"{' '.join(map(str, args))} failed:\n{details}"
+        ) from error
+
+
 def bundle(source_app, destination, test_runtime=False, search_roots=()):
     source_app, destination = source_app.resolve(), destination.resolve()
     if destination.exists() or destination == source_app:
@@ -171,13 +183,20 @@ def bundle(source_app, destination, test_runtime=False, search_roots=()):
     plist['LSMinimumSystemVersion'] = '.'.join(map(str, minimum))
     plist_path.write_bytes(plistlib.dumps(plist))
     (resources / 'qt.conf').write_text('[Paths]\nPlugins = PlugIns\n')
-    # Qt resolves plugin paths relative to Contents by default for app bundles.
-    for target in selected.values():
-        subprocess.run(['codesign', '--force', '--sign', '-', str(target)], check=True, capture_output=True)
+    # shutil.copy2 can preserve Finder metadata from cached Intel artifacts;
+    # codesign rejects resource forks and FinderInfo.  Clear it before signing,
+    # sign nested code first, and sign the main executable last.
+    if shutil.which('xattr'):
+        checked_run('xattr', '-cr', str(destination))
+    signing_targets = [target for target in selected.values()
+                       if target != executable]
+    signing_targets.append(executable)
+    for target in signing_targets:
+        checked_run('codesign', '--force', '--timestamp=none', '--sign', '-', str(target))
     for framework in qt_frameworks:
-        subprocess.run(['codesign', '--force', '--sign', '-', str(framework)], check=True, capture_output=True)
-    subprocess.run(['codesign', '--force', '--deep', '--sign', '-', str(destination)], check=True, capture_output=True)
-    subprocess.run(['codesign', '--verify', '--deep', '--strict', str(destination)], check=True, capture_output=True)
+        checked_run('codesign', '--force', '--timestamp=none', '--sign', '-', str(framework))
+    checked_run('codesign', '--force', '--deep', '--timestamp=none', '--sign', '-', str(destination))
+    checked_run('codesign', '--verify', '--deep', '--strict', str(destination))
     manifest = {'binaryCount': len(selected), 'testRuntime': test_runtime, 'minimumMacOS': plist['LSMinimumSystemVersion'], 'qtPlugins': roots,
                 'mapnikPlugins': required_mapnik, 'dependencies': edges,
                 'bytes': sum(p.stat().st_size for p in destination.rglob('*') if p.is_file() and not p.is_symlink()),

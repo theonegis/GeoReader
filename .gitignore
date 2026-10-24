@@ -83,3 +83,6 @@ Desktop.ini
 # Local scientific-data build dependencies and test evidence
 /.test-deps/
 /tests/output/
+
+# 本地软件著作权申报材料（不进入版本库）
+/docs/软件著作权/

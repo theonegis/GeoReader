@@ -14,6 +14,7 @@ class QComboBox;
 class QDialog;
 class QDoubleSpinBox;
 class QFormLayout;
+class QFontComboBox;
 class QFrame;
 class QKeySequenceEdit;
 class QLabel;
@@ -77,6 +78,7 @@ private:
     void fitSelectedLayer();
     void removeSelectedLayer();
     void removeLayer(int row);
+    void removeDataset(const QString &datasetId);
     void moveSelectedLayer(int offset);
     void moveLayer(int from, int to);
     static int remappedIndex(int current, int from, int to);
@@ -124,7 +126,8 @@ private:
     QLabel *m_emptyIcon = nullptr;
     QFrame *m_coordinateFrame = nullptr;
 
-    QListWidget *m_layerList = nullptr;
+    QTreeWidget *m_layerTree = nullptr;
+    int m_layerPanelWidth = 420;
     QComboBox *m_baseMapCombo = nullptr;
     QWidget *m_layerEditor = nullptr;
     QLabel *m_layerIdentity = nullptr;
@@ -133,6 +136,11 @@ private:
     QPushButton *m_lineColorButton = nullptr;
     QPushButton *m_fillColorButton = nullptr;
     QDoubleSpinBox *m_lineWidthSpin = nullptr;
+    QCheckBox *m_labelEnabledCheck = nullptr;
+    QComboBox *m_labelFieldCombo = nullptr;
+    QFontComboBox *m_labelFontCombo = nullptr;
+    QSpinBox *m_labelFontSizeSpin = nullptr;
+    QComboBox *m_labelPlacementCombo = nullptr;
     QComboBox *m_stretchCombo = nullptr;
     QComboBox *m_redBandCombo = nullptr;
     QComboBox *m_greenBandCombo = nullptr;

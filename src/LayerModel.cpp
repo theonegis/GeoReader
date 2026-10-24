@@ -47,6 +47,11 @@ QVariant LayerModel::data(const QModelIndex &index, int role) const
     case LineColorRole: return layer.lineColor;
     case FillColorRole: return layer.fillColor;
     case LineWidthRole: return layer.lineWidth;
+    case LabelEnabledRole: return layer.labelEnabled;
+    case LabelFieldRole: return layer.labelField;
+    case LabelFontFamilyRole: return layer.labelFontFamily;
+    case LabelFontSizeRole: return layer.labelFontSize;
+    case LabelPlacementRole: return layer.labelPlacement;
     case BandCountRole: return layer.bandCount;
     case RedBandRole: return layer.redBand;
     case GreenBandRole: return layer.greenBand;
@@ -83,6 +88,11 @@ bool LayerModel::setData(const QModelIndex &index, const QVariant &value, int ro
     case LineColorRole: layer.lineColor = value.value<QColor>(); break;
     case FillColorRole: layer.fillColor = value.value<QColor>(); break;
     case LineWidthRole: layer.lineWidth = std::clamp(value.toDouble(), 0.25, 12.0); break;
+    case LabelEnabledRole: layer.labelEnabled = value.toBool(); break;
+    case LabelFieldRole: layer.labelField = value.toString().trimmed(); break;
+    case LabelFontFamilyRole: layer.labelFontFamily = value.toString().trimmed(); break;
+    case LabelFontSizeRole: layer.labelFontSize = std::clamp(value.toInt(), 6, 72); break;
+    case LabelPlacementRole: layer.labelPlacement = value.toString().trimmed(); break;
     case RedBandRole: layer.redBand = value.toInt(); break;
     case GreenBandRole: layer.greenBand = value.toInt(); break;
     case BlueBandRole: layer.blueBand = value.toInt(); break;
@@ -121,6 +131,11 @@ QHash<int, QByteArray> LayerModel::roleNames() const
         {LineColorRole, "lineColor"},
         {FillColorRole, "fillColor"},
         {LineWidthRole, "lineWidth"},
+        {LabelEnabledRole, "labelEnabled"},
+        {LabelFieldRole, "labelField"},
+        {LabelFontFamilyRole, "labelFontFamily"},
+        {LabelFontSizeRole, "labelFontSize"},
+        {LabelPlacementRole, "labelPlacement"},
         {BandCountRole, "bandCount"},
         {RedBandRole, "redBand"},
         {GreenBandRole, "greenBand"},
@@ -164,9 +179,17 @@ void LayerModel::addLayer(LayerSnapshot layer)
         m_layers.cbegin(), m_layers.cend(), [&layer](const LayerSnapshot &item) {
             return item.datasetId == layer.datasetId;
         });
-    const int row = m_layers.size();
+    int row = m_layers.size();
+    if (!newDataset) {
+        for (int index = m_layers.size() - 1; index >= 0; --index) {
+            if (m_layers.at(index).datasetId == layer.datasetId) {
+                row = index + 1;
+                break;
+            }
+        }
+    }
     beginInsertRows({}, row, row);
-    m_layers.push_back(std::move(layer));
+    m_layers.insert(row, std::move(layer));
     endInsertRows();
     emit countChanged();
     if (newDataset)
@@ -267,6 +290,45 @@ void LayerModel::setVectorStyle(int row, const QColor &lineColor,
     layer.fillColor = fillColor;
     layer.lineWidth = clampedWidth;
     emit dataChanged(index(row), index(row), {LineColorRole, FillColorRole, LineWidthRole});
+    advanceRevision();
+    emit renderingChanged();
+}
+
+void LayerModel::setVectorLabel(int row, bool enabled, const QString &field,
+                                const QString &fontFamily, int fontSize,
+                                const QString &placement)
+{
+    if (row < 0 || row >= m_layers.size())
+        return;
+    static const QSet<QString> placements {
+        QStringLiteral("center"), QStringLiteral("above"),
+        QStringLiteral("below"), QStringLiteral("left"),
+        QStringLiteral("right"), QStringLiteral("start"),
+        QStringLiteral("end"), QStringLiteral("interior"),
+        QStringLiteral("boundary")
+    };
+    auto &layer = m_layers[row];
+    const QString normalizedField = field.trimmed();
+    const QString normalizedFamily = fontFamily.trimmed();
+    const int normalizedSize = std::clamp(fontSize, 6, 72);
+    const QString normalizedPlacement = placements.contains(placement)
+        ? placement : QStringLiteral("center");
+    const bool normalizedEnabled = enabled && !normalizedField.isEmpty();
+    if (layer.labelEnabled == normalizedEnabled
+        && layer.labelField == normalizedField
+        && layer.labelFontFamily == normalizedFamily
+        && layer.labelFontSize == normalizedSize
+        && layer.labelPlacement == normalizedPlacement) {
+        return;
+    }
+    layer.labelEnabled = normalizedEnabled;
+    layer.labelField = normalizedField;
+    layer.labelFontFamily = normalizedFamily;
+    layer.labelFontSize = normalizedSize;
+    layer.labelPlacement = normalizedPlacement;
+    emit dataChanged(index(row), index(row),
+                     {LabelEnabledRole, LabelFieldRole, LabelFontFamilyRole,
+                      LabelFontSizeRole, LabelPlacementRole});
     advanceRevision();
     emit renderingChanged();
 }
