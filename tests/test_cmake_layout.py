@@ -29,8 +29,10 @@ class CMakeLayoutTests(unittest.TestCase):
         )
 
         self.assertIn("_mapnik_runtime_roots", closure)
+        self.assertIn('"${_root}/bin/*mapnik*.dll"', closure)
         self.assertIn("LIBRARIES ${_mapnik_runtime_roots}", closure)
-        self.assertIn("file(REAL_PATH", closure)
+        self.assertIn("string(FIND", closure)
+        self.assertIn("_root_position EQUAL 0", closure)
         self.assertIn("xattr', '-cr'", macos_bundle)
         self.assertIn("--timestamp=none", macos_bundle)
         self.assertIn("def checked_run", macos_bundle)
