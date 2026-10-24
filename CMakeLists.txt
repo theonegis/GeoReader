@@ -686,7 +686,7 @@ else()
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)
     set(CPACK_RPM_PACKAGE_LICENSE "PolyForm-Noncommercial-1.0.0")
     set(CPACK_RPM_PACKAGE_GROUP "Applications/Engineering")
-    set(CPACK_RPM_PACKAGE_REQUIRES
+    string(CONCAT CPACK_RPM_PACKAGE_REQUIRES
         "glibc >= 2.39, dbus-libs, libwayland-client, libwayland-cursor, "
         "libwayland-egl, libxkbcommon")
     set(CPACK_RPM_FILE_NAME RPM-DEFAULT)

@@ -1,4 +1,7 @@
 # Resolve actual imports instead of copying every library from a vcpkg triplet.
+if(POLICY CMP0207)
+    cmake_policy(SET CMP0207 NEW)
+endif()
 set(_prefix "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
 set(_root "@GEOREADER_VCPKG_RUNTIME_ROOT@")
 set(_executable "${_prefix}/@CMAKE_INSTALL_BINDIR@/GeoReader@CMAKE_EXECUTABLE_SUFFIX@")
@@ -10,7 +13,8 @@ file(GET_RUNTIME_DEPENDENCIES
     RESOLVED_DEPENDENCIES_VAR _resolved
     UNRESOLVED_DEPENDENCIES_VAR _unresolved
     PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
-    POST_EXCLUDE_REGEXES "[Ww][Ii][Nn][Dd][Oo][Ww][Ss]/[Ss][Yy][Ss][Tt][Ee][Mm]32/.*")
+    # Older CMake versions can return Windows paths with either separator.
+    POST_EXCLUDE_REGEXES [[[Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\][Ss][Yy][Ss][Tt][Ee][Mm]32[/\\].*]])
 if(_unresolved)
     message(FATAL_ERROR "Unresolved runtime dependencies: ${_unresolved}")
 endif()

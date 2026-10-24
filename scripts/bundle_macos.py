@@ -37,12 +37,15 @@ def bundle(source_app, destination, test_runtime=False, search_roots=()):
         if original.exists():
             shutil.copy2(original, resources / name)
     qt_plugins = Path(run('qtpaths', '--plugin-dir'))
+    qt_libraries = Path(run('qtpaths', '--query', 'QT_INSTALL_LIBS'))
     runtime_root = os.environ.get('GEOREADER_VCPKG_RUNTIME_ROOT')
     gdal_prefix = Path(os.environ['GEOREADER_GDAL_PREFIX']) if os.environ.get('GEOREADER_GDAL_PREFIX') else (Path(runtime_root) if runtime_root else Path(run('brew', '--prefix', 'gdal')))
     proj_prefix = Path(runtime_root) if runtime_root else Path(run('brew', '--prefix', 'proj'))
     mapnik_prefix = Path(runtime_root) if runtime_root else Path(run('brew', '--prefix', 'mapnik'))
     search = [Path(p).resolve() for p in search_roots]
-    search += [source_app / 'Contents/Frameworks', gdal_prefix / 'lib', mapnik_prefix / 'lib', Path('/opt/homebrew/lib')]
+    # Official Qt SDK frameworks live outside the vcpkg prefix. Use the same
+    # Qt installation as the selected plugins, before any Homebrew fallback.
+    search += [source_app / 'Contents/Frameworks', qt_libraries, gdal_prefix / 'lib', mapnik_prefix / 'lib', Path('/opt/homebrew/lib')]
     selected, queued, origins, edges = {}, [], {}, []
     qt_frameworks = set()
 
