@@ -41,19 +41,24 @@ endif()
 set(_manifest "")
 set(_runtime_libraries ${_mapnik_runtime_roots} ${_resolved})
 list(REMOVE_DUPLICATES _runtime_libraries)
-cmake_path(NORMAL_PATH _root OUTPUT_VARIABLE _root_normalized)
 foreach(_library IN LISTS _runtime_libraries)
     # Qt deploy handles Qt and platform libraries. Only the resolved vcpkg
     # closure belongs here; system libraries stay supplied by the target OS.
-    # GET_RUNTIME_DEPENDENCIES may return a symlink spelling that resolves
-    # differently from REAL_PATH during CPack staging. Compare the normalized
-    # lexical paths so vcpkg libraries are not accidentally filtered out.
-    set(_library_normalized "${_library}")
-    cmake_path(NORMAL_PATH _library_normalized)
-    string(FIND "${_library_normalized}" "${_root_normalized}/" _root_position)
-    if(_root_position EQUAL 0)
-        file(INSTALL "${_library}" DESTINATION "${_destination}" TYPE SHARED_LIBRARY FOLLOW_SYMLINK_CHAIN)
-        get_filename_component(_name "${_library}" NAME)
+    # CPack can expose a dependency through a resolved symlink spelling that
+    # does not compare as a child of the configured triplet root. Resolve the
+    # dependency by basename against the triplet's own bin/lib directories;
+    # this keeps the package minimal without relying on fragile path-prefix
+    # comparisons.
+    get_filename_component(_name "${_library}" NAME)
+    set(_vcpkg_library "")
+    foreach(_runtime_dir IN ITEMS bin lib)
+        if(EXISTS "${_root}/${_runtime_dir}/${_name}")
+            set(_vcpkg_library "${_root}/${_runtime_dir}/${_name}")
+            break()
+        endif()
+    endforeach()
+    if(_vcpkg_library)
+        file(INSTALL "${_vcpkg_library}" DESTINATION "${_destination}" TYPE SHARED_LIBRARY FOLLOW_SYMLINK_CHAIN)
         string(APPEND _manifest "${_name}\n")
     endif()
 endforeach()
