@@ -61,7 +61,7 @@ class PackagingRegressionTests(unittest.TestCase):
             if(CPACK_RPM_PACKAGE_REQUIRES MATCHES ";")
                 message(FATAL_ERROR "RPM Requires contains a CMake list separator: ${CPACK_RPM_PACKAGE_REQUIRES}")
             endif()
-            if(NOT CPACK_RPM_PACKAGE_REQUIRES STREQUAL "glibc >= 2.39, dbus-libs, libwayland-client, libwayland-cursor, libwayland-egl, libxkbcommon, libglvnd-egl, libglvnd-glx, libglvnd-opengl")
+            if(NOT CPACK_RPM_PACKAGE_REQUIRES STREQUAL "glibc >= 2.39, dbus-libs, fontconfig, libwayland-client, libwayland-cursor, libwayland-egl, libxkbcommon, libglvnd-egl, libglvnd-glx, libglvnd-opengl")
                 message(FATAL_ERROR "RPM dependencies were lost")
             endif()
             if(NOT CPACK_RPM_PACKAGE_AUTOREQPROV STREQUAL "OFF")
@@ -71,8 +71,18 @@ class PackagingRegressionTests(unittest.TestCase):
 
     def test_debian_declares_qt_opengl_runtime_dependencies(self) -> None:
         source = (PROJECT_ROOT / "CMakeLists.txt").read_text()
-        for package in ("libegl1", "libgl1", "libglx0", "libopengl0"):
+        for package in ("libfontconfig1", "libegl1", "libgl1", "libglx0", "libopengl0"):
             self.assertIn(package, source)
+
+    def test_linux_prefers_pinned_runtime_and_excludes_host_openssl(self) -> None:
+        source = (PROJECT_ROOT / "CMakeLists.txt").read_text()
+        self.assertIn(
+            '"\\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}/georeader;'
+            '\\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"',
+            source,
+        )
+        self.assertIn('"^libssl\\\\.so"', source)
+        self.assertIn('"^libcrypto\\\\.so"', source)
 
     def test_windows_system_filter_handles_both_path_separators(self) -> None:
         source = (PROJECT_ROOT / "cmake/InstallRuntimeClosure.cmake.in").read_text()

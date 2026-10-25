@@ -510,7 +510,7 @@ if(APPLE)
 elseif(UNIX)
     set_target_properties(GeoReader PROPERTIES
         INSTALL_RPATH
-            "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR};\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}/georeader"
+            "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}/georeader;\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
     )
 endif()
 
@@ -599,6 +599,17 @@ if(NOT APPLE)
         endif()
     ]])
     set(_georeader_qt_deploy_options)
+    if(UNIX)
+        # OpenSSL is part of the pinned vcpkg closure below georeader/. Do not
+        # also copy the build host's libssl/libcrypto beside Qt: the generic
+        # Linux deploy helper can otherwise mix an Ubuntu libssl with the
+        # target distribution's libcrypto. Keep the matched vcpkg pair and
+        # search the private runtime directory first via INSTALL_RPATH above.
+        list(APPEND _georeader_qt_deploy_options
+            PRE_EXCLUDE_REGEXES
+                "^libssl\\.so"
+                "^libcrypto\\.so")
+    endif()
     if(UNIX AND Qt6_VERSION VERSION_GREATER_EQUAL 6.10)
         # Desktop integration plugins may be installed beside Qt's own
         # plugins without being part of the Qt SDK. Arch's Fcitx5, qt6ct and
@@ -700,7 +711,7 @@ else()
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "GeoReader maintainers")
     set(CPACK_DEBIAN_PACKAGE_SECTION "science")
     string(CONCAT CPACK_DEBIAN_PACKAGE_DEPENDS
-        "libc6 (>= 2.39), libdbus-1-3, libwayland-client0, "
+        "libc6 (>= 2.39), libdbus-1-3, libfontconfig1, libwayland-client0, "
         "libwayland-cursor0, libwayland-egl1, libxkbcommon0, "
         "libegl1, libgl1, libglx0, libopengl0")
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
@@ -708,7 +719,7 @@ else()
     set(CPACK_RPM_PACKAGE_LICENSE "PolyForm-Noncommercial-1.0.0")
     set(CPACK_RPM_PACKAGE_GROUP "Applications/Engineering")
     string(CONCAT CPACK_RPM_PACKAGE_REQUIRES
-        "glibc >= 2.39, dbus-libs, libwayland-client, libwayland-cursor, "
+        "glibc >= 2.39, dbus-libs, fontconfig, libwayland-client, libwayland-cursor, "
         "libwayland-egl, libxkbcommon, libglvnd-egl, libglvnd-glx, "
         "libglvnd-opengl")
     # Qt and its plug-ins are bundled. RPM's automatic ELF scanner otherwise
