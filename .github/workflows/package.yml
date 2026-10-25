@@ -595,17 +595,30 @@ jobs:
             find "$deb_root" -path '*/mapnik/input/*.input' -type f -print
           )
           test "${#mapnik_plugins[@]}" -ge 3
+          package_libdir="$(find "$deb_root" -type d -path '*/georeader' -print -quit)"
+          test -d "$package_libdir"
+          # The executable must resolve every dependency through its own
+          # RPATH. The runner's LD_LIBRARY_PATH can contain a newer OpenSSL
+          # than the package and hide a missing bundled libcrypto.
+          if env -u LD_LIBRARY_PATH ldd "$executable" | grep -F 'not found'; then
+            echo "Packaged runtime has missing libraries: $executable" >&2
+            exit 1
+          fi
+          # Plugins are loaded after the application has already mapped Qt.
+          # They have no RPATH back to those libraries, so isolated ldd only
+          # sees them when the packaged directories are supplied. Keep the
+          # runner toolchain out of that search.
+          packaged_libraries="$(dirname "$package_libdir"):$package_libdir"
           for runtime_file in \
-              "$executable" \
               "$offscreen_plugin" \
               "$wayland_plugin" \
               "$compose_plugin" \
               "$ibus_plugin" \
               "${mapnik_plugins[@]}"; do
             test -f "$runtime_file"
-            # The runner's LD_LIBRARY_PATH can contain a newer OpenSSL than
-            # the package, which hides a missing bundled libcrypto.
-            if env -u LD_LIBRARY_PATH ldd "$runtime_file" | grep -F 'not found'; then
+            if env -u LD_LIBRARY_PATH \
+                LD_LIBRARY_PATH="$packaged_libraries" \
+                ldd "$runtime_file" | grep -F 'not found'; then
               echo "Packaged runtime has missing libraries: $runtime_file" >&2
               exit 1
             fi
