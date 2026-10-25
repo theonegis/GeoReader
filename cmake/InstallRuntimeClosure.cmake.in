@@ -62,7 +62,15 @@ foreach(_library IN LISTS _runtime_libraries)
         endif()
     endforeach()
     if(_vcpkg_library)
-        file(INSTALL "${_vcpkg_library}" DESTINATION "${_destination}" TYPE SHARED_LIBRARY FOLLOW_SYMLINK_CHAIN)
+        # TYPE SHARED_LIBRARY is an internal install-script form that can
+        # rewrite or remove an ELF RPATH. The CI preparation step deliberately
+        # gives every vcpkg shared object an $ORIGIN RPATH so transitive pairs
+        # such as libssl/libcrypto resolve from this private directory. Use the
+        # documented file form to preserve those bytes and permissions.
+        file(INSTALL "${_vcpkg_library}"
+            DESTINATION "${_destination}"
+            USE_SOURCE_PERMISSIONS
+            FOLLOW_SYMLINK_CHAIN)
         string(APPEND _manifest "${_name}\n")
     endif()
 endforeach()

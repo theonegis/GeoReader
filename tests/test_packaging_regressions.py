@@ -51,6 +51,16 @@ class PackagingRegressionTests(unittest.TestCase):
                 '''
             )
 
+    def test_runtime_closure_preserves_prepared_elf_rpath(self) -> None:
+        source = (PROJECT_ROOT / "cmake/InstallRuntimeClosure.cmake.in").read_text()
+        self.assertIn("USE_SOURCE_PERMISSIONS", source)
+        self.assertIn("FOLLOW_SYMLINK_CHAIN", source)
+        self.assertNotIn(
+            'file(INSTALL "${_vcpkg_library}" DESTINATION "${_destination}" '
+            'TYPE SHARED_LIBRARY',
+            source,
+        )
+
     def test_rpm_requires_is_a_single_comma_separated_string(self) -> None:
         source = (PROJECT_ROOT / "CMakeLists.txt").read_text()
         # Execute the actual packaging metadata without configuring Qt/GDAL.
