@@ -27,6 +27,30 @@ class PackagingRegressionTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_file_install_does_not_embed_cpack_staging_prefix_twice(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "libfixture.so"
+            staging = root / "stage"
+            source.write_bytes(b"runtime fixture")
+            expected = staging / "usr/lib/georeader/libfixture.so"
+            duplicated = staging / str(staging).lstrip("/") / "usr/lib/georeader/libfixture.so"
+
+            self.run_cmake(
+                f'''set(CMAKE_INSTALL_PREFIX "/usr")
+                set(ENV{{DESTDIR}} "{staging}")
+                set(_staging_prefix "$ENV{{DESTDIR}}${{CMAKE_INSTALL_PREFIX}}")
+                set(_destination "${{CMAKE_INSTALL_PREFIX}}/lib/georeader")
+                file(INSTALL "{source}" DESTINATION "${{_destination}}" TYPE FILE)
+                if(NOT EXISTS "{expected}")
+                    message(FATAL_ERROR "Runtime was not installed below the CPack staging root")
+                endif()
+                if(EXISTS "{duplicated}")
+                    message(FATAL_ERROR "CPack staging root was embedded twice")
+                endif()
+                '''
+            )
+
     def test_rpm_requires_is_a_single_comma_separated_string(self) -> None:
         source = (PROJECT_ROOT / "CMakeLists.txt").read_text()
         # Execute the actual packaging metadata without configuring Qt/GDAL.

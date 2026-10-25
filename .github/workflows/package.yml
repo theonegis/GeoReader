@@ -328,9 +328,9 @@ jobs:
         run: |
           $installer = Get-ChildItem dist -Filter '*.exe' | Select-Object -First 1
           if (-not $installer) { throw 'Windows installer not found.' }
-          $installDir = "$env:RUNNER_TEMP/GeoReader"
+          $installDir = Join-Path $env:RUNNER_TEMP 'GeoReader'
           $setup = Start-Process -FilePath $installer.FullName `
-            -ArgumentList "/S /D=$installDir" -Wait -PassThru
+            -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
           if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
           $app = Get-ChildItem -Path $installDir -Recurse `
             -Filter 'GeoReader.exe' -File | Select-Object -First 1
@@ -347,11 +347,12 @@ jobs:
           if ($check.ExitCode -ne 0) { throw "Bundled drivers/data check failed: $($check.ExitCode)" }
 
       - name: Upload Windows installer
+        if: always()
         uses: actions/upload-artifact@v6
         with:
           name: GeoReader-Windows-x64
           path: dist/*.exe
-          if-no-files-found: error
+          if-no-files-found: warn
 
   linux:
     name: Linux x64 DEB and RPM

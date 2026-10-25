@@ -31,6 +31,18 @@ class CMakeLayoutTests(unittest.TestCase):
         self.assertIn("_mapnik_runtime_roots", closure)
         self.assertIn('"${_root}/bin/*mapnik*.dll"', closure)
         self.assertIn("LIBRARIES ${_mapnik_runtime_roots}", closure)
+        self.assertIn(
+            'set(_staging_prefix "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")',
+            closure,
+        )
+        self.assertIn(
+            'set(_destination "${CMAKE_INSTALL_PREFIX}/@CMAKE_INSTALL_LIBDIR@/georeader")',
+            closure,
+        )
+        self.assertNotIn(
+            'set(_destination "${_staging_prefix}/@CMAKE_INSTALL_LIBDIR@/georeader")',
+            closure,
+        )
         self.assertIn('get_filename_component(_name "${_library}" NAME)', closure)
         self.assertIn('if(EXISTS "${_root}/${_runtime_dir}/${_name}")', closure)
         self.assertIn('file(INSTALL "${_vcpkg_library}"', closure)
@@ -38,7 +50,13 @@ class CMakeLayoutTests(unittest.TestCase):
         self.assertIn("--timestamp=none", macos_bundle)
         self.assertIn("def checked_run", macos_bundle)
         self.assertIn("Get-ChildItem -Path $installDir -Recurse", workflow)
-        self.assertIn('-ArgumentList "/S /D=$installDir"', workflow)
+        self.assertIn("$installDir = Join-Path $env:RUNNER_TEMP 'GeoReader'", workflow)
+        self.assertIn("-ArgumentList @('/S', \"/D=$installDir\")", workflow)
+        windows_upload = workflow.split("- name: Upload Windows installer", 1)[1].split(
+            "- name:", 1
+        )[0]
+        self.assertIn("if: always()", windows_upload)
+        self.assertIn("if-no-files-found: warn", windows_upload)
 
     def test_native_widgets_shell_uses_pinned_qlementine(self) -> None:
         cmake_source = (PROJECT_ROOT / "CMakeLists.txt").read_text(

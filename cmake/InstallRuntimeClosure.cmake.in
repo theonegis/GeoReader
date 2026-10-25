@@ -2,10 +2,14 @@
 if(POLICY CMP0207)
     cmake_policy(SET CMP0207 NEW)
 endif()
-set(_prefix "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+# Paths read by this script must include CPack's staging root.  Destinations
+# passed to file(INSTALL), however, must not: file(INSTALL) prepends DESTDIR
+# itself.  Keeping these prefixes separate prevents the staging directory from
+# being embedded a second time inside DEB/RPM archives.
+set(_staging_prefix "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
 set(_root "@GEOREADER_VCPKG_RUNTIME_ROOT@")
-set(_executable "${_prefix}/@CMAKE_INSTALL_BINDIR@/GeoReader@CMAKE_EXECUTABLE_SUFFIX@")
-file(GLOB _plugins "${_prefix}/@GEOREADER_MAPNIK_PLUGIN_INSTALL_DIR@/*")
+set(_executable "${_staging_prefix}/@CMAKE_INSTALL_BINDIR@/GeoReader@CMAKE_EXECUTABLE_SUFFIX@")
+file(GLOB _plugins "${_staging_prefix}/@GEOREADER_MAPNIK_PLUGIN_INSTALL_DIR@/*")
 # Mapnik input plugins link to the Mapnik core library.  Treat that library as
 # an explicit dependency root as well as a resolved dependency: CMake does not
 # include root libraries in RESOLVED_DEPENDENCIES_VAR, and some ELF scanners do
@@ -34,9 +38,9 @@ if(_unresolved)
     message(FATAL_ERROR "Unresolved runtime dependencies: ${_unresolved}")
 endif()
 if(WIN32)
-    set(_destination "${_prefix}/@CMAKE_INSTALL_BINDIR@")
+    set(_destination "${CMAKE_INSTALL_PREFIX}/@CMAKE_INSTALL_BINDIR@")
 else()
-    set(_destination "${_prefix}/@CMAKE_INSTALL_LIBDIR@/georeader")
+    set(_destination "${CMAKE_INSTALL_PREFIX}/@CMAKE_INSTALL_LIBDIR@/georeader")
 endif()
 set(_manifest "")
 set(_runtime_libraries ${_mapnik_runtime_roots} ${_resolved})
@@ -62,5 +66,5 @@ foreach(_library IN LISTS _runtime_libraries)
         string(APPEND _manifest "${_name}\n")
     endif()
 endforeach()
-file(MAKE_DIRECTORY "${_prefix}/@CMAKE_INSTALL_DATADIR@/georeader")
-file(WRITE "${_prefix}/@CMAKE_INSTALL_DATADIR@/georeader/runtime-libraries.txt" "${_manifest}")
+file(MAKE_DIRECTORY "${_staging_prefix}/@CMAKE_INSTALL_DATADIR@/georeader")
+file(WRITE "${_staging_prefix}/@CMAKE_INSTALL_DATADIR@/georeader/runtime-libraries.txt" "${_manifest}")
