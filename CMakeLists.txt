@@ -709,6 +709,11 @@ else()
     string(CONCAT CPACK_RPM_PACKAGE_REQUIRES
         "glibc >= 2.39, dbus-libs, libwayland-client, libwayland-cursor, "
         "libwayland-egl, libxkbcommon")
+    # Qt and its plug-ins are bundled. RPM's automatic ELF scanner otherwise
+    # turns Qt's private symbol versions (for example Qt_6_PRIVATE_API) into
+    # impossible repository dependencies even though their providers are in
+    # this package. Keep only the explicit host-system requirements above.
+    set(CPACK_RPM_PACKAGE_AUTOREQPROV OFF)
     set(CPACK_RPM_FILE_NAME RPM-DEFAULT)
 endif()
 

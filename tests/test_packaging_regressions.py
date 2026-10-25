@@ -64,6 +64,9 @@ class PackagingRegressionTests(unittest.TestCase):
             if(NOT CPACK_RPM_PACKAGE_REQUIRES STREQUAL "glibc >= 2.39, dbus-libs, libwayland-client, libwayland-cursor, libwayland-egl, libxkbcommon")
                 message(FATAL_ERROR "RPM dependencies were lost")
             endif()
+            if(NOT CPACK_RPM_PACKAGE_AUTOREQPROV STREQUAL "OFF")
+                message(FATAL_ERROR "Bundled Qt private ABI leaked into RPM auto dependencies")
+            endif()
         ''')
 
     def test_windows_system_filter_handles_both_path_separators(self) -> None:
