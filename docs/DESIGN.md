@@ -1,6 +1,6 @@
 # GeoReader 设计与工程说明
 
-当前版本：3.1.0。基于主分支的 Qt Widgets + Qlementine 原生界面，合入科学数据查看器和统一图标；不再使用 Qt Quick/QML。
+当前版本：4.0.0。基于主分支的 Qt Widgets + Qlementine 原生界面，合入科学数据查看器和统一图标；不再使用 Qt Quick/QML。
 
 ## 多维数据扩展
 
