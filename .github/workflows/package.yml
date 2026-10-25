@@ -632,6 +632,17 @@ jobs:
             fedora:43 \
             bash -euxc '
               dnf install -y /packages/*.rpm
+              missing="$(
+                find /usr/bin/GeoReader /usr/lib/x86_64-linux-gnu/georeader \
+                  -type f \( -perm /111 -o -name "*.so*" \) \
+                  -exec ldd {} \; 2>/dev/null \
+                  | awk "/not found/ { print }" \
+                  | sort -u
+              )"
+              if [[ -n "$missing" ]]; then
+                printf "Unresolved packaged runtime libraries:\n%s\n" "$missing" >&2
+                exit 1
+              fi
               QT_QPA_PLATFORM=offscreen /usr/bin/GeoReader --runtime-check \
                 /workspace/tests/data/netcdf4.nc \
                 /workspace/tests/data/scientific.h5 \
