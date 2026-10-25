@@ -348,7 +348,7 @@ class ReleaseTripletTests(unittest.TestCase):
             "dpkg-deb -x",
             'rpm2cpio "$rpm_package"',
             "cpio --extract --make-directories --quiet",
-            'ldd "$runtime_file"',
+            'env -u LD_LIBRARY_PATH ldd "$runtime_file"',
             "--smoke-test",
             "mapnik/input/geojson.input",
             "mapnik/input/shape.input",

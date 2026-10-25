@@ -55,6 +55,10 @@ class PackagingRegressionTests(unittest.TestCase):
         source = (PROJECT_ROOT / "cmake/InstallRuntimeClosure.cmake.in").read_text()
         self.assertIn("USE_SOURCE_PERMISSIONS", source)
         self.assertIn("FOLLOW_SYMLINK_CHAIN", source)
+        self.assertIn('"${_root}/lib/libssl.so*"', source)
+        self.assertIn('"${_root}/lib/libcrypto.so*"', source)
+        self.assertIn("--force-rpath", source)
+        self.assertIn('--set-rpath "\\$ORIGIN"', source)
         self.assertNotIn(
             'file(INSTALL "${_vcpkg_library}" DESTINATION "${_destination}" '
             'TYPE SHARED_LIBRARY',
@@ -76,6 +80,9 @@ class PackagingRegressionTests(unittest.TestCase):
             endif()
             if(NOT CPACK_RPM_PACKAGE_AUTOREQPROV STREQUAL "OFF")
                 message(FATAL_ERROR "Bundled Qt private ABI leaked into RPM auto dependencies")
+            endif()
+            if(NOT CPACK_RPM_SPEC_MORE_DEFINE STREQUAL "%global __spec_install_post /bin/true")
+                message(FATAL_ERROR "RPM would strip bundled library RPATHs")
             endif()
         ''')
 

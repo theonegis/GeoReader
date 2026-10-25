@@ -727,6 +727,9 @@ else()
     # impossible repository dependencies even though their providers are in
     # this package. Keep only the explicit host-system requirements above.
     set(CPACK_RPM_PACKAGE_AUTOREQPROV OFF)
+    # rpmbuild's post-install helpers remove $ORIGIN RPATHs. The bundled
+    # OpenSSL pair then falls through to the target system's libcrypto.
+    set(CPACK_RPM_SPEC_MORE_DEFINE "%global __spec_install_post /bin/true")
     set(CPACK_RPM_FILE_NAME RPM-DEFAULT)
 endif()
 

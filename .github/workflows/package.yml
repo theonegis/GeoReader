@@ -603,7 +603,9 @@ jobs:
               "$ibus_plugin" \
               "${mapnik_plugins[@]}"; do
             test -f "$runtime_file"
-            if ldd "$runtime_file" | grep -F 'not found'; then
+            # The runner's LD_LIBRARY_PATH can contain a newer OpenSSL than
+            # the package, which hides a missing bundled libcrypto.
+            if env -u LD_LIBRARY_PATH ldd "$runtime_file" | grep -F 'not found'; then
               echo "Packaged runtime has missing libraries: $runtime_file" >&2
               exit 1
             fi

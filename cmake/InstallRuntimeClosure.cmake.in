@@ -74,5 +74,45 @@ foreach(_library IN LISTS _runtime_libraries)
         string(APPEND _manifest "${_name}\n")
     endif()
 endforeach()
+if(UNIX)
+    # libssl and libcrypto must come from the same build. A scanner can keep
+    # the vcpkg libssl while resolving libcrypto from the host, and Fedora's
+    # older libcrypto then rejects OPENSSL_3.6.0 at load time.
+    file(GLOB _openssl_libraries
+        "${_root}/lib/libssl.so*"
+        "${_root}/lib/libcrypto.so*")
+    foreach(_library IN LISTS _openssl_libraries)
+        file(INSTALL "${_library}"
+            DESTINATION "${_destination}"
+            USE_SOURCE_PERMISSIONS
+            FOLLOW_SYMLINK_CHAIN)
+        get_filename_component(_name "${_library}" NAME)
+        string(APPEND _manifest "${_name}\n")
+    endforeach()
+    find_program(_patchelf patchelf)
+    if(NOT _patchelf)
+        message(FATAL_ERROR
+            "patchelf is required to keep bundled Linux libraries relocatable")
+    endif()
+    file(GLOB _bundled_objects
+        "${_staging_prefix}/@CMAKE_INSTALL_LIBDIR@/georeader/*.so"
+        "${_staging_prefix}/@CMAKE_INSTALL_LIBDIR@/georeader/*.so.*")
+    foreach(_object IN LISTS _bundled_objects)
+        if(IS_SYMLINK "${_object}")
+            continue()
+        endif()
+        # DT_RPATH, not DT_RUNPATH: a dependency's RUNPATH is not used when
+        # resolving that dependency's own dependencies, so libssl would still
+        # load the system libcrypto.
+        execute_process(
+            COMMAND "${_patchelf}" --force-rpath --set-rpath "\$ORIGIN" "${_object}"
+            RESULT_VARIABLE _patchelf_result
+            ERROR_VARIABLE _patchelf_error
+        )
+        if(NOT _patchelf_result EQUAL 0)
+            message(FATAL_ERROR "patchelf failed for ${_object}: ${_patchelf_error}")
+        endif()
+    endforeach()
+endif()
 file(MAKE_DIRECTORY "${_staging_prefix}/@CMAKE_INSTALL_DATADIR@/georeader")
 file(WRITE "${_staging_prefix}/@CMAKE_INSTALL_DATADIR@/georeader/runtime-libraries.txt" "${_manifest}")
