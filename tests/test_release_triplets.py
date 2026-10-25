@@ -349,7 +349,7 @@ class ReleaseTripletTests(unittest.TestCase):
             'rpm2cpio "$rpm_package"',
             "cpio --extract --make-directories --quiet",
             'env -u LD_LIBRARY_PATH ldd "$executable"',
-            'LD_LIBRARY_PATH="$packaged_libraries"',
+            "Bundled libcrypto was not used",
             "--smoke-test",
             "mapnik/input/geojson.input",
             "mapnik/input/shape.input",
