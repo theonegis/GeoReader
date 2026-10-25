@@ -608,6 +608,15 @@ jobs:
               exit 1
               ;;
           esac
+          # DT_RUNPATH on the executable finds libssl, then Fedora resolves
+          # libssl's libcrypto from the system and rejects OPENSSL_3.6.0.
+          # DT_RPATH is transitive, so the packaged libcrypto stays selected.
+          rpm_executable="$rpm_root/usr/bin/GeoReader"
+          if ! readelf -d "$rpm_executable" | grep -F '(RPATH)' | grep -F 'georeader'; then
+            echo "RPM executable is missing a transitive DT_RPATH" >&2
+            readelf -d "$rpm_executable" >&2 || true
+            exit 1
+          fi
 
           source_mapnik_input="$(
             find "$GITHUB_WORKSPACE/vcpkg_installed/x64-linux-release" \

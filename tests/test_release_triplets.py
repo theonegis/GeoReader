@@ -94,6 +94,19 @@ class ReleaseTripletTests(unittest.TestCase):
         self.assertIn("set(CPACK_PACKAGE_RELOCATABLE OFF)", cmake)
         self.assertIn("Qt6_VERSION VERSION_LESS 6.9", cmake)
         self.assertIn("cmake/RunQt68Deploy.cmake.in", cmake)
+        self.assertLess(
+            cmake.index('install(SCRIPT "${GEOREADER_QT_DEPLOY_SCRIPT}")'),
+            cmake.index("cmake/ForceLinuxExecutableRpath.cmake.in"),
+        )
+        rpath_script = (
+            PROJECT_ROOT / "cmake" / "ForceLinuxExecutableRpath.cmake.in"
+        ).read_text(encoding="utf-8")
+        self.assertIn("--force-rpath", rpath_script)
+        self.assertIn(
+            '"\\$ORIGIN/../@CMAKE_INSTALL_LIBDIR@/georeader:'
+            '\\$ORIGIN/../@CMAKE_INSTALL_LIBDIR@"',
+            rpath_script,
+        )
 
     def test_qt68_deploy_wrapper_uses_cpack_staging_prefix(self) -> None:
         template = (
@@ -350,6 +363,8 @@ class ReleaseTripletTests(unittest.TestCase):
             "cpio --extract --make-directories --quiet",
             'env -u LD_LIBRARY_PATH ldd "$executable"',
             "Bundled libcrypto was not used",
+            "RPM executable is missing a transitive DT_RPATH",
+            "grep -F '(RPATH)'",
             "--smoke-test",
             "mapnik/input/geojson.input",
             "mapnik/input/shape.input",

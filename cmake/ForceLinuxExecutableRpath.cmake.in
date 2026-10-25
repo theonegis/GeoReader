@@ -1,0 +1,23 @@
+# Qt's deploy helper can leave the executable with DT_RUNPATH. RUNPATH is not
+# searched when a dependency loads its own dependencies, so bundled libssl
+# binds the system libcrypto. DT_RPATH still applies to that whole chain.
+# Run this after Qt deployment so it is the last edit of the dynamic section.
+set(_executable "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/@CMAKE_INSTALL_BINDIR@/GeoReader")
+if(NOT EXISTS "${_executable}")
+    message(FATAL_ERROR "GeoReader executable was not staged: ${_executable}")
+endif()
+find_program(_patchelf patchelf)
+if(NOT _patchelf)
+    message(FATAL_ERROR
+        "patchelf is required to keep the Linux executable relocatable")
+endif()
+execute_process(
+    COMMAND "${_patchelf}" --force-rpath --set-rpath
+        "\$ORIGIN/../@CMAKE_INSTALL_LIBDIR@/georeader:\$ORIGIN/../@CMAKE_INSTALL_LIBDIR@"
+        "${_executable}"
+    RESULT_VARIABLE _patchelf_result
+    ERROR_VARIABLE _patchelf_error
+)
+if(NOT _patchelf_result EQUAL 0)
+    message(FATAL_ERROR "patchelf failed for ${_executable}: ${_patchelf_error}")
+endif()

@@ -679,6 +679,14 @@ if(NOT APPLE)
     else()
         install(SCRIPT "${GEOREADER_QT_DEPLOY_SCRIPT}")
     endif()
+    if(UNIX AND NOT APPLE)
+        configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForceLinuxExecutableRpath.cmake.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/ForceLinuxExecutableRpath.cmake"
+            @ONLY)
+        install(SCRIPT
+            "${CMAKE_CURRENT_BINARY_DIR}/ForceLinuxExecutableRpath.cmake")
+    endif()
 endif()
 
 set(CPACK_PACKAGE_NAME "GeoReader")
@@ -729,6 +737,7 @@ else()
     set(CPACK_RPM_PACKAGE_AUTOREQPROV OFF)
     # rpmbuild's post-install helpers remove $ORIGIN RPATHs. The bundled
     # OpenSSL pair then falls through to the target system's libcrypto.
+    set(CPACK_RPM_SPEC_INSTALL_POST "/bin/true")
     set(CPACK_RPM_SPEC_MORE_DEFINE "%global __spec_install_post /bin/true")
     set(CPACK_RPM_FILE_NAME RPM-DEFAULT)
 endif()
