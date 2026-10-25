@@ -646,14 +646,16 @@ if(NOT APPLE)
                     "${_qt_plugin_target}")
             endif()
         endforeach()
+        # Qt 6.8's deploy helper places plugins at <prefix>/plugins, the
+        # layout of the official SDK. The Debian multiarch qt6 directory is
+        # not on that search path, so the offscreen plugin must sit beside
+        # the deployed xcb plugin.
         install(IMPORTED_RUNTIME_ARTIFACTS
             ${_georeader_legacy_linux_platform_plugins}
-            LIBRARY DESTINATION
-                "${CMAKE_INSTALL_LIBDIR}/qt6/plugins/platforms")
+            LIBRARY DESTINATION "plugins/platforms")
         install(IMPORTED_RUNTIME_ARTIFACTS
             ${_georeader_legacy_linux_input_plugins}
-            LIBRARY DESTINATION
-                "${CMAKE_INSTALL_LIBDIR}/qt6/plugins/platforminputcontexts")
+            LIBRARY DESTINATION "plugins/platforminputcontexts")
         # The input plugins are intentionally outside Qt 6.8's default plugin
         # set, so its dependency scanner does not discover Qt DBus through
         # them. Install the module explicitly with the plugins.

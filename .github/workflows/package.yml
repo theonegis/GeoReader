@@ -579,7 +579,7 @@ jobs:
           # Drop the runner library path. It contains the Qt SDK and a newer
           # OpenSSL than Ubuntu, so it can satisfy libraries the package
           # itself does not ship.
-          env -u LD_LIBRARY_PATH \
+          env -u LD_LIBRARY_PATH -u QT_PLUGIN_PATH -u QML2_IMPORT_PATH \
             QT_QPA_PLATFORM=offscreen "$executable" --runtime-check \
             "$GITHUB_WORKSPACE/tests/data/netcdf4.nc" \
             "$GITHUB_WORKSPACE/tests/data/scientific.h5" \
@@ -626,7 +626,7 @@ jobs:
           mv "$source_mapnik_input" "${source_mapnik_input}.build-only"
           trap 'mv "${source_mapnik_input}.build-only" "$source_mapnik_input"' EXIT
 
-          env -u LD_LIBRARY_PATH \
+          env -u LD_LIBRARY_PATH -u QT_PLUGIN_PATH -u QML2_IMPORT_PATH \
             QT_QPA_PLATFORM=offscreen \
             QT_QUICK_BACKEND=software \
             "$executable" \

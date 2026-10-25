@@ -74,7 +74,7 @@ class ReleaseTripletTests(unittest.TestCase):
         )
         self.assertIn("Qt6::QIbusPlatformInputContextPlugin", cmake)
         self.assertIn(
-            '"${CMAKE_INSTALL_LIBDIR}/qt6/plugins/platforminputcontexts"',
+            '"plugins/platforminputcontexts"',
             cmake,
         )
         self.assertIn("IMPORTED_RUNTIME_ARTIFACTS Qt6::DBus", cmake)
@@ -363,6 +363,7 @@ class ReleaseTripletTests(unittest.TestCase):
             "cpio --extract --make-directories --quiet",
             'env -u LD_LIBRARY_PATH ldd "$executable"',
             "Bundled libcrypto was not used",
+            "-u QT_PLUGIN_PATH",
             "RPM executable is missing a transitive DT_RPATH",
             "grep -F '(RPATH)'",
             "--smoke-test",
